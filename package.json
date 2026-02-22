@@ -1,0 +1,28 @@
+{
+  "name": "autonomous-football-league",
+  "version": "0.0.1",
+  "private": true,
+  "packageManager": "pnpm@10.29.3",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma",
+      "sharp",
+      "unrs-resolver"
+    ]
+  },
+  "scripts": {
+    "dev": "pnpm --filter @afl/web dev",
+    "build": "pnpm --filter @afl/web build",
+    "lint": "pnpm --filter @afl/web lint",
+    "db:generate": "pnpm --filter @afl/db prisma:generate",
+    "db:migrate": "pnpm --filter @afl/db prisma:migrate",
+    "db:studio": "pnpm --filter @afl/db prisma:studio",
+    "seed": "pnpm --filter @afl/db seed"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
