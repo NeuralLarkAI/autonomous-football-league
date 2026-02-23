@@ -169,6 +169,7 @@ export const PatchRunbookSchema = z.object({
   isEnabled: z.boolean().optional(),
   cron: z.string().nullable().optional(),
   description: z.string().optional(),
+  actionPayloadJson: z.string().optional(),
 });
 
 export const UpdateSubmissionStatusSchema = z.object({

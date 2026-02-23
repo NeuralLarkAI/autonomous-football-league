@@ -5,7 +5,7 @@ import { getActiveLeague } from "@/lib/request-league";
 export async function GET() {
   try {
     const activeLeague = await getActiveLeague();
-    const [agentCount, taskCount, pendingApprovals, lastEvent, leagueState, activePhase, nextRunbooks] =
+    const [agentCount, taskCount, pendingApprovals, lastEvent, leagueState, activePhase, nextRunbooks, seasonOne] =
       await Promise.all([
         prisma.agent.count({ where: { leagueId: activeLeague.id, status: "ACTIVE" } }),
         prisma.task.count({ where: { leagueId: activeLeague.id, status: { in: ["BACKLOG", "IN_PROGRESS", "REVIEW", "BLOCKED"] } } }),
@@ -19,7 +19,20 @@ export async function GET() {
           take: 3,
           include: { ownerAgent: { select: { id: true, name: true } } },
         }),
+        prisma.season.findFirst({
+          where: { leagueId: activeLeague.id, seasonNumber: 1 },
+          orderBy: { createdAt: "desc" },
+        }),
       ]);
+
+    const [teamCount, gameCount, weekOneFinal, weekOneTotal] = seasonOne
+      ? await Promise.all([
+          prisma.team.count({ where: { leagueId: activeLeague.id } }),
+          prisma.game.count({ where: { leagueId: activeLeague.id, seasonId: seasonOne.id } }),
+          prisma.game.count({ where: { leagueId: activeLeague.id, seasonId: seasonOne.id, week: 1, status: "FINAL" } }),
+          prisma.game.count({ where: { leagueId: activeLeague.id, seasonId: seasonOne.id, week: 1 } }),
+        ])
+      : [0, 0, 0, 0];
 
     return NextResponse.json({
       agentCount,
@@ -31,6 +44,16 @@ export async function GET() {
       phase: leagueState?.phase ?? "PRE_SEASON",
       activePhase,
       nextRunbooks,
+      seasonOne: seasonOne
+        ? {
+            id: seasonOne.id,
+            status: seasonOne.status,
+            teamCount,
+            gameCount,
+            weekOneFinal,
+            weekOneTotal,
+          }
+        : null,
     });
   } catch (e) {
     console.error(e);

@@ -2,6 +2,390 @@ import { prisma } from "@afl/db";
 import { TASK_TEMPLATES } from "./tasks";
 import type { AgentRunResult } from "./types";
 
+type SeasonOneChecklistItem = {
+  key: string;
+  title: string;
+  description: string;
+  dependsOn: string[];
+};
+
+const SEASON_ONE_CHECKLIST: SeasonOneChecklistItem[] = [
+  {
+    key: "teams",
+    title: "Season 1 Launch: Verify 8 Teams",
+    description: "Confirm exactly 8 teams are present with valid offense/defense schemes.",
+    dependsOn: [],
+  },
+  {
+    key: "coach-assignments",
+    title: "Season 1 Launch: Assign Coach Agents",
+    description: "Assign coach agents or deterministic baseline coaches to every team.",
+    dependsOn: ["teams"],
+  },
+  {
+    key: "engine-version",
+    title: "Season 1 Launch: Lock Engine Version",
+    description: "Pin engine version and deterministic seed rules for full replayability.",
+    dependsOn: ["teams"],
+  },
+  {
+    key: "schedule",
+    title: "Season 1 Launch: Build Round-Robin Schedule",
+    description: "Generate week-by-week round-robin schedule with deterministic game seeds.",
+    dependsOn: ["coach-assignments", "engine-version"],
+  },
+  {
+    key: "standings-init",
+    title: "Season 1 Launch: Initialize Standings",
+    description: "Initialize standings rows for every team before kickoff.",
+    dependsOn: ["schedule"],
+  },
+  {
+    key: "week-runner",
+    title: "Season 1 Launch: Configure Week Runner",
+    description: "Validate WEEK_SIMULATE runbook payload defaults and enable it.",
+    dependsOn: ["schedule"],
+  },
+  {
+    key: "slate-post",
+    title: "Season 1 Launch: Publish Week 1 Slate",
+    description: "Publish the Week 1 slate to social and log public event visibility.",
+    dependsOn: ["schedule"],
+  },
+  {
+    key: "dry-run",
+    title: "Season 1 Launch: Dry-Run Deterministic Game",
+    description: "Step a game in non-final mode to verify deterministic play generation.",
+    dependsOn: ["schedule"],
+  },
+  {
+    key: "week1-sim",
+    title: "Season 1 Launch: Simulate Week 1",
+    description: "Run all Week 1 games to final and persist play-by-play/box scores.",
+    dependsOn: ["standings-init", "week-runner", "dry-run"],
+  },
+  {
+    key: "rankings-audit",
+    title: "Season 1 Launch: Rankings Audit",
+    description: "Verify standings integrity against final game outcomes and point totals.",
+    dependsOn: ["week1-sim"],
+  },
+  {
+    key: "recap-post",
+    title: "Season 1 Launch: Publish Week 1 Recap",
+    description: "Publish recap summary with scores and highlights after finals.",
+    dependsOn: ["week1-sim"],
+  },
+  {
+    key: "postmortem",
+    title: "Season 1 Launch: Ops Postmortem",
+    description: "Capture launch risks, regressions, and runbook adjustments for Week 2.",
+    dependsOn: ["rankings-audit", "recap-post"],
+  },
+];
+
+async function ensureTaskDependency(leagueId: string, taskId: string, dependsOnTaskId: string) {
+  await prisma.taskDependency.upsert({
+    where: { taskId_dependsOnTaskId: { taskId, dependsOnTaskId } },
+    update: {},
+    create: {
+      leagueId,
+      taskId,
+      dependsOnTaskId,
+    },
+  });
+}
+
+async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Promise<{ tasksCreated: number; eventsCreated: number }> {
+  let tasksCreated = 0;
+  let eventsCreated = 0;
+
+  if (agentId === "chief-of-staff") {
+    const checklistTasks = new Map<string, string>();
+
+    for (const item of SEASON_ONE_CHECKLIST) {
+      const existing = await prisma.task.findFirst({
+        where: { leagueId, title: item.title },
+      });
+
+      const task =
+        existing ??
+        (await prisma.task.create({
+          data: {
+            leagueId,
+            title: item.title,
+            description: item.description,
+            department: "COMMISSIONER",
+            tier: 1,
+            status: "BACKLOG",
+            assigneeId: agentId,
+            acceptanceCriteria: "Checklist item is completed and validated by feed events.",
+            riskNotes: "Skipping this item can block deterministic Season 1 operations.",
+            testPlan: "Run related runbook and verify DB state and EventLog trail.",
+            rollbackPlan: "Return item to BACKLOG and rerun setup/week orchestration.",
+          },
+        }));
+
+      if (!existing) {
+        tasksCreated += 1;
+      }
+      checklistTasks.set(item.key, task.id);
+    }
+
+    for (const item of SEASON_ONE_CHECKLIST) {
+      const taskId = checklistTasks.get(item.key);
+      if (!taskId) continue;
+      for (const depKey of item.dependsOn) {
+        const depTaskId = checklistTasks.get(depKey);
+        if (!depTaskId) continue;
+        await ensureTaskDependency(leagueId, taskId, depTaskId);
+      }
+    }
+
+    await prisma.eventLog.create({
+      data: {
+        leagueId,
+        agentId,
+        type: "TASK_CREATED",
+        summary: "Chief of Staff refreshed Season 1 launch checklist with dependency graph.",
+        entityType: "AGENT",
+        entityId: agentId,
+        meta: JSON.stringify({ checklistItems: SEASON_ONE_CHECKLIST.length, tasksCreated }),
+      },
+    });
+    eventsCreated += 1;
+  }
+
+  if (agentId === "scheduler") {
+    const season = await prisma.season.findFirst({
+      where: { leagueId, seasonNumber: 1 },
+      orderBy: { createdAt: "desc" },
+    });
+    const gameCount = season
+      ? await prisma.game.count({
+          where: {
+            leagueId,
+            seasonId: season.id,
+          },
+        })
+      : 0;
+
+    const scheduleTaskTitle = "Scheduler: Ensure Season 1 Schedule Coverage";
+    const scheduleTask = await prisma.task.findFirst({
+      where: { leagueId, title: scheduleTaskTitle },
+    });
+    if (!scheduleTask) {
+      await prisma.task.create({
+        data: {
+          leagueId,
+          title: scheduleTaskTitle,
+          description:
+            "Validate Season 1 schedule exists for all teams and weeks. If absent, escalate setup runbook execution.",
+          department: "FOOTBALL_OPS",
+          tier: 1,
+          status: "BACKLOG",
+          assigneeId: agentId,
+          acceptanceCriteria: "All expected week rows exist; no duplicate home/away pairings.",
+          riskNotes: "Missing schedule rows block week simulations and standings updates.",
+          testPlan: "Count expected games and verify every team appears once per week.",
+          rollbackPlan: "Trigger Season 1 Setup runbook and regenerate schedule.",
+        },
+      });
+      tasksCreated += 1;
+    }
+
+    if (!season || gameCount === 0) {
+      await prisma.eventLog.create({
+        data: {
+          leagueId,
+          agentId,
+          type: "SCHEDULE_CREATED",
+          summary: "Scheduler detected missing Season 1 schedule and flagged setup runbook requirement.",
+          entityType: "AGENT",
+          entityId: agentId,
+          meta: JSON.stringify({ seasonFound: Boolean(season), gameCount }),
+        },
+      });
+    } else {
+      await prisma.eventLog.create({
+        data: {
+          leagueId,
+          agentId,
+          type: "SCHEDULE_CREATED",
+          summary: `Scheduler validated Season 1 schedule coverage (${gameCount} games).`,
+          entityType: "SEASON",
+          entityId: season.id,
+          meta: JSON.stringify({ seasonId: season.id, gameCount }),
+        },
+      });
+    }
+    eventsCreated += 1;
+  }
+
+  if (agentId === "rankings") {
+    const season = await prisma.season.findFirst({
+      where: { leagueId, seasonNumber: 1 },
+      orderBy: { createdAt: "desc" },
+    });
+    const [teamCount, standingsCount, finalGames] = await Promise.all([
+      prisma.team.count({ where: { leagueId } }),
+      season ? prisma.standingsRow.count({ where: { leagueId, seasonId: season.id } }) : Promise.resolve(0),
+      season ? prisma.game.count({ where: { leagueId, seasonId: season.id, status: "FINAL" } }) : Promise.resolve(0),
+    ]);
+    const mismatch = Boolean(season) && standingsCount !== teamCount;
+
+    if (mismatch) {
+      const title = "Rankings: Standings Mismatch Incident Review";
+      const existing = await prisma.task.findFirst({ where: { leagueId, title } });
+      if (!existing) {
+        await prisma.task.create({
+          data: {
+            leagueId,
+            title,
+            description: "Standings row count mismatch detected against team count.",
+            department: "FOOTBALL_OPS",
+            tier: 2,
+            status: "BLOCKED",
+            assigneeId: agentId,
+            acceptanceCriteria: "Standings row count equals team count and final game deltas reconcile.",
+            riskNotes: "Incorrect standings break rankings and public credibility.",
+            testPlan: "Recompute standings from final games and compare with persisted rows.",
+            rollbackPlan: "Reset standings rows and replay standings refresh from final games.",
+          },
+        });
+        tasksCreated += 1;
+      }
+    }
+
+    await prisma.eventLog.create({
+      data: {
+        leagueId,
+        agentId,
+        type: "STANDINGS_UPDATED",
+        summary: mismatch
+          ? "Rankings audit detected standings mismatch and raised remediation task."
+          : "Rankings audit validated standings consistency.",
+        entityType: season ? "SEASON" : "AGENT",
+        entityId: season?.id ?? agentId,
+        meta: JSON.stringify({
+          seasonId: season?.id ?? null,
+          teamCount,
+          standingsCount,
+          finalGames,
+          mismatch,
+        }),
+      },
+    });
+    eventsCreated += 1;
+  }
+
+  if (agentId === "broadcast-media") {
+    const season = await prisma.season.findFirst({
+      where: { leagueId, seasonNumber: 1 },
+      orderBy: { createdAt: "desc" },
+    });
+    if (season) {
+      const nextWeekGame = await prisma.game.findFirst({
+        where: { leagueId, seasonId: season.id, status: { in: ["SCHEDULED", "LIVE"] } },
+        orderBy: [{ week: "asc" }, { kickoffAt: "asc" }],
+      });
+      if (nextWeekGame) {
+        await emitSocialPost({
+          leagueId,
+          agentId,
+          title: `Broadcast Slate Preview - Week ${nextWeekGame.week}`,
+          bodyMarkdown: `Broadcast preparing coverage package for Week ${nextWeekGame.week}.`,
+          tags: ["season1", "slate", `week${nextWeekGame.week}`],
+          visibility: "PUBLIC",
+        });
+        eventsCreated += 1;
+      }
+
+      const recapWeekGame = await prisma.game.findFirst({
+        where: { leagueId, seasonId: season.id, status: "FINAL" },
+        orderBy: [{ week: "desc" }, { finishedAt: "desc" }],
+      });
+      if (recapWeekGame) {
+        await emitSocialPost({
+          leagueId,
+          agentId,
+          title: `Broadcast Recap Draft - Week ${recapWeekGame.week}`,
+          bodyMarkdown: `Recap draft queued for Week ${recapWeekGame.week}. Final box scores are available in Game Center.`,
+          tags: ["season1", "recap", `week${recapWeekGame.week}`],
+          visibility: "PUBLIC",
+        });
+        eventsCreated += 1;
+      }
+    }
+  }
+
+  if (agentId === "commissioner") {
+    const setupRunbook = await prisma.runbook.findFirst({
+      where: { leagueId, actionType: "SEASON1_SETUP" },
+      orderBy: { createdAt: "asc" },
+    });
+    const season = await prisma.season.findFirst({
+      where: { leagueId, seasonNumber: 1 },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!setupRunbook) {
+      await prisma.runbook.create({
+        data: {
+          leagueId,
+          name: "Season 1 Setup",
+          description: "Agent-driven Season 1 bootstrap for teams, schedule, standings, and launch posts.",
+          ownerAgentId: "commissioner",
+          triggerType: "MANUAL",
+          actionType: "SEASON1_SETUP",
+          actionPayloadJson: JSON.stringify({ seasonNumber: 1, teamCount: 8 }),
+          isEnabled: true,
+        },
+      });
+      await prisma.eventLog.create({
+        data: {
+          leagueId,
+          agentId,
+          type: "RUNBOOK_CREATED",
+          summary: "Commissioner created missing Season 1 Setup runbook.",
+          entityType: "AGENT",
+          entityId: agentId,
+          meta: JSON.stringify({ actionType: "SEASON1_SETUP" }),
+        },
+      });
+      eventsCreated += 1;
+    } else if (!season) {
+      await prisma.eventLog.create({
+        data: {
+          leagueId,
+          agentId,
+          type: "SEASON1_CREATED",
+          summary: "Commissioner detected missing Season 1 and requested setup runbook execution.",
+          entityType: "RUNBOOK",
+          entityId: setupRunbook.id,
+          runbookId: setupRunbook.id,
+          meta: JSON.stringify({ actionType: setupRunbook.actionType }),
+        },
+      });
+      eventsCreated += 1;
+    }
+
+    if (season) {
+      await emitSocialPost({
+        leagueId,
+        agentId,
+        title: `Commissioner Notice - Season ${season.seasonNumber} Operations`,
+        bodyMarkdown:
+          "Season 1 operations are active. Use runbooks for setup validation and weekly simulations to preserve deterministic replayability.",
+        tags: ["commissioner", "season1", "operations"],
+        visibility: "PUBLIC",
+      });
+      eventsCreated += 1;
+    }
+  }
+
+  return { tasksCreated, eventsCreated };
+}
+
 async function emitSocialPost(input: {
   leagueId: string;
   agentId?: string;
@@ -275,6 +659,10 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
       });
       eventsCreated++;
     }
+
+    const seasonOneBehavior = await runSeasonOneAgentBehaviors(activeLeagueId, agentId);
+    tasksCreated += seasonOneBehavior.tasksCreated;
+    eventsCreated += seasonOneBehavior.eventsCreated;
 
     const durationMs = Date.now() - startedAt.getTime();
     await prisma.agentRun.update({

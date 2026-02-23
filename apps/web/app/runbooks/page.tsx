@@ -119,6 +119,10 @@ export default function RunbooksPage() {
             <option value="RUN_KICKOFF">RUN_KICKOFF</option>
             <option value="RUN_COMBINE">RUN_COMBINE</option>
             <option value="GENERATE_REPORT">GENERATE_REPORT</option>
+            <option value="SEASON1_SETUP">SEASON1_SETUP</option>
+            <option value="WEEK_SIMULATE">WEEK_SIMULATE</option>
+            <option value="POST_WEEKLY_SLATE">POST_WEEKLY_SLATE</option>
+            <option value="POST_WEEKLY_RECAP">POST_WEEKLY_RECAP</option>
           </select>
           <select value={triggerType} onChange={(e) => setTriggerType(e.target.value)} className="rounded bg-slate-900 px-2 py-1 text-sm text-slate-200">
             <option value="MANUAL">MANUAL</option>

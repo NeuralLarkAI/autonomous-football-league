@@ -27,6 +27,14 @@ interface DashboardStats {
     triggerType: string;
     ownerAgent: { id: string; name: string } | null;
   }>;
+  seasonOne: null | {
+    id: string;
+    status: string;
+    teamCount: number;
+    gameCount: number;
+    weekOneFinal: number;
+    weekOneTotal: number;
+  };
 }
 
 export default function DashboardPage() {
@@ -41,6 +49,41 @@ export default function DashboardPage() {
   const [togglingLock, setTogglingLock] = useState(false);
   const [quickAction, setQuickAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  const runRunbookByActionType = useCallback(
+    async (actionType: string, payload?: Record<string, unknown>) => {
+      const runbooksRes = await fetch("/api/runbooks");
+      const runbooks = (await runbooksRes.json().catch(() => [])) as Array<{
+        id: string;
+        actionType: string;
+        isEnabled: boolean;
+      }>;
+      const target = runbooks.find((r) => r.actionType === actionType && r.isEnabled);
+      if (!target) {
+        throw new Error(`No enabled ${actionType} runbook found.`);
+      }
+
+      if (payload) {
+        const patchRes = await fetch(`/api/runbooks/${target.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ actionPayloadJson: JSON.stringify(payload) }),
+        });
+        if (!patchRes.ok) {
+          const data = await patchRes.json().catch(() => ({}));
+          throw new Error(data.error ?? "Failed to update runbook payload.");
+        }
+      }
+
+      const runRes = await fetch(`/api/runbooks/${target.id}/run`, { method: "POST" });
+      const runData = await runRes.json().catch(() => ({}));
+      if (!runRes.ok) {
+        throw new Error(runData.error ?? "Runbook execution failed.");
+      }
+      return runData;
+    },
+    []
+  );
 
   const load = useCallback(
     () =>
@@ -103,6 +146,34 @@ export default function DashboardPage() {
     setMessage(r.ok ? d.summary ?? "Integrity audit complete." : d.error ?? "Integrity audit failed.");
     load();
     setQuickAction(null);
+  };
+
+  const runSeasonOneSetup = async () => {
+    setQuickAction("season1-setup");
+    setMessage(null);
+    try {
+      await runRunbookByActionType("SEASON1_SETUP", { seasonNumber: 1, teamCount: 8 });
+      setMessage("Season 1 setup runbook completed.");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setQuickAction(null);
+    }
+  };
+
+  const simulateWeekOne = async () => {
+    setQuickAction("week1");
+    setMessage(null);
+    try {
+      await runRunbookByActionType("WEEK_SIMULATE", { weekNumber: 1, mode: "RUN_TO_FINAL", stepSizePlays: 20 });
+      setMessage("Week 1 simulation runbook completed.");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setQuickAction(null);
+    }
   };
 
   const toggleLock = async () => {
@@ -199,6 +270,25 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <h2 className="text-sm font-semibold text-slate-200">Season 1 Status</h2>
+          {stats?.seasonOne ? (
+            <div className="mt-2 space-y-1 text-sm text-slate-300">
+              <p>Status: {stats.seasonOne.status}</p>
+              <p>Teams: {stats.seasonOne.teamCount}</p>
+              <p>Games: {stats.seasonOne.gameCount}</p>
+              <p>
+                Week 1: {stats.seasonOne.weekOneFinal}/{stats.seasonOne.weekOneTotal} final
+              </p>
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-slate-500">Season 1 not initialized yet.</p>
+          )}
+          <Link href={`/l/${leagueSlug}/games`} className="mt-2 inline-block text-xs text-blue-400 hover:underline">
+            Open schedule
+          </Link>
+        </div>
+
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
           <h2 className="text-sm font-semibold text-slate-200">Live Now</h2>
           {liveGames.length === 0 ? (
             <p className="mt-1 text-sm text-slate-500">No live games.</p>
@@ -265,6 +355,20 @@ export default function DashboardPage() {
       </div>
 
       <div className="flex flex-wrap gap-3">
+        <button
+          onClick={runSeasonOneSetup}
+          disabled={quickAction !== null}
+          className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-medium text-indigo-100 hover:bg-indigo-600 disabled:opacity-50"
+        >
+          {quickAction === "season1-setup" ? "Running..." : "Run Season 1 Setup"}
+        </button>
+        <button
+          onClick={simulateWeekOne}
+          disabled={quickAction !== null}
+          className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-teal-100 hover:bg-teal-600 disabled:opacity-50"
+        >
+          {quickAction === "week1" ? "Running..." : "Simulate Week 1"}
+        </button>
         <button
           onClick={runKickoff}
           disabled={kickingOff}

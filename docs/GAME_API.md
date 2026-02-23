@@ -8,6 +8,19 @@ League-scoped endpoints use `/api/l/[slug]/...`.
   - Body: `{ seasonNumber?: 1, teamCount?: 8 }`
   - Creates/ensures Season 1 teams, schedule, standings rows.
 
+## Runbook-driven Season 1 ops
+
+- `POST /api/runbooks/[id]/run`
+  - Runs Season 1 orchestration actions when `actionType` is:
+    - `SEASON1_SETUP`
+    - `WEEK_SIMULATE`
+    - `POST_WEEKLY_SLATE`
+    - `POST_WEEKLY_RECAP`
+- `PATCH /api/runbooks/[id]`
+  - Supports `actionPayloadJson` updates for dynamic week simulation payloads.
+  - Example payload for week execution:
+    - `{"actionPayloadJson":"{\"weekNumber\":1,\"mode\":\"RUN_TO_FINAL\",\"stepSizePlays\":20}"}`
+
 ## Games
 
 - `GET /api/l/[slug]/games?week=&status=`

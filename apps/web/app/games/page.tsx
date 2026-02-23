@@ -24,6 +24,38 @@ export default function GamesPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const runWeekSimRunbook = useCallback(
+    async (targetWeek: number) => {
+      const runbooksRes = await fetch("/api/runbooks");
+      const runbooks = (await runbooksRes.json().catch(() => [])) as Array<{
+        id: string;
+        actionType: string;
+        isEnabled: boolean;
+      }>;
+      const runbook = runbooks.find((r) => (r.actionType === "WEEK_SIMULATE" || r.actionType === "RUN_WEEK") && r.isEnabled);
+      if (!runbook) throw new Error("No enabled week simulation runbook found.");
+
+      const patchRes = await fetch(`/api/runbooks/${runbook.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actionPayloadJson: JSON.stringify({ weekNumber: targetWeek, mode: "RUN_TO_FINAL", stepSizePlays: 20 }),
+        }),
+      });
+      if (!patchRes.ok) {
+        const data = await patchRes.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to update week simulation runbook.");
+      }
+
+      const runRes = await fetch(`/api/runbooks/${runbook.id}/run`, { method: "POST" });
+      if (!runRes.ok) {
+        const data = await runRes.json().catch(() => ({}));
+        throw new Error(data.error ?? "Week simulation runbook failed.");
+      }
+    },
+    []
+  );
+
   const load = useCallback(async () => {
     const qs = new URLSearchParams();
     if (week !== "ALL") qs.set("week", String(week));
@@ -50,17 +82,19 @@ export default function GamesPage() {
     setBusy(false);
   };
 
-  const startWeek = async () => {
+  const simulateSelectedWeek = async () => {
     if (week === "ALL") return;
     setBusy(true);
-    const weekGames = games.filter((g) => g.week === week && g.status !== "FINAL");
-    for (const game of weekGames) {
-      await fetch(`/api/l/${slug}/games/${game.id}/start`, { method: "POST" });
-      await fetch(`/api/l/${slug}/games/${game.id}/step?plays=40`, { method: "POST" });
+    try {
+      await runWeekSimRunbook(week);
+      const weekGames = games.filter((g) => g.week === week);
+      setMessage(`Week ${week} simulation triggered for ${weekGames.length} game(s).`);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
     }
-    setMessage(`Week ${week} simulation triggered for ${weekGames.length} game(s).`);
-    await load();
-    setBusy(false);
   };
 
   const weeks = useMemo(() => Array.from(new Set(games.map((g) => g.week))).sort((a, b) => a - b), [games]);
@@ -73,8 +107,8 @@ export default function GamesPage() {
           <button onClick={createSeason} disabled={busy} className="rounded bg-blue-700 px-3 py-1.5 text-sm text-blue-100 disabled:opacity-50">
             Create Season 1
           </button>
-          <button onClick={startWeek} disabled={busy || week === "ALL"} className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-emerald-100 disabled:opacity-50">
-            Start Week
+          <button onClick={simulateSelectedWeek} disabled={busy || week === "ALL"} className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-emerald-100 disabled:opacity-50">
+            Simulate Selected Week
           </button>
         </div>
       </div>
