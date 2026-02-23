@@ -202,3 +202,49 @@ export const CreateLeagueSettingsSchema = z.object({
   publicName: z.string().optional(),
   description: z.string().optional(),
 });
+
+export const OffenseCallSchema = z.object({
+  personnel: z.enum(["11", "12", "21"]),
+  concept: z.enum([
+    "INSIDE_ZONE",
+    "OUTSIDE_ZONE",
+    "POWER",
+    "COUNTER",
+    "SLANTS",
+    "MESH",
+    "STICK",
+    "FLOOD",
+    "PA_SHOT",
+    "FOUR_VERTS",
+    "POST_DIG",
+    "RB_SCREEN",
+    "BUBBLE",
+  ]),
+  aggression: z.number().min(0).max(1),
+  tempo: z.enum(["NORMAL", "HURRY"]),
+});
+
+export const DefenseCallSchema = z.object({
+  front: z.enum(["BASE", "NICKEL", "DIME"]),
+  coverage: z.enum(["C1", "C2", "C3", "C4", "MATCH"]),
+  pressure: z.enum(["NONE", "SIM", "BLITZ"]),
+  contain: z.number().min(0).max(1),
+});
+
+export const CreateSeasonOneSchema = z.object({
+  seasonNumber: z.number().int().min(1).default(1),
+  teamCount: z.number().int().min(2).max(32).default(8),
+});
+
+export const StartGameSchema = z.object({
+  forceRestart: z.boolean().optional(),
+});
+
+export const StepGameSchema = z.object({
+  plays: z.number().int().min(1).max(200).default(5),
+});
+
+export const ListGamesSchema = z.object({
+  week: z.coerce.number().int().min(1).optional(),
+  status: z.enum(["SCHEDULED", "LIVE", "FINAL"]).optional(),
+});
