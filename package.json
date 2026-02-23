@@ -14,16 +14,16 @@
     ]
   },
   "scripts": {
-    "dev": "pnpm --filter @afl/web dev",
-    "build": "pnpm --filter @afl/web build",
-    "lint": "pnpm --filter @afl/web lint",
-    "db:generate": "pnpm --filter @afl/db prisma:generate",
-    "db:migrate": "pnpm --filter @afl/db prisma:migrate",
-    "db:studio": "pnpm --filter @afl/db prisma:studio",
-    "seed": "pnpm --filter @afl/db seed",
-    "_dev": "cd apps/web && pnpm dev",
-    "_db:migrate": "cd packages/db && pnpm prisma:migrate",
-    "_seed": "cd packages/db && pnpm seed"
+    "dev": "corepack pnpm --filter @afl/web dev",
+    "build": "corepack pnpm --filter @afl/web build",
+    "lint": "corepack pnpm --filter @afl/web lint",
+    "db:generate": "corepack pnpm --filter @afl/db prisma:generate",
+    "db:migrate": "corepack pnpm --filter @afl/db prisma:migrate",
+    "db:studio": "corepack pnpm --filter @afl/db prisma:studio",
+    "seed": "corepack pnpm --filter @afl/db seed",
+    "_dev": "cd apps/web && corepack pnpm dev",
+    "_db:migrate": "cd packages/db && corepack pnpm prisma:migrate",
+    "_seed": "cd packages/db && corepack pnpm seed"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

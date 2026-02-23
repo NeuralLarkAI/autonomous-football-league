@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 interface Agent {
   id: string;
@@ -90,7 +91,9 @@ export default function AgentsPage() {
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="font-semibold text-slate-100">{agent.name}</p>
+                  <Link href={`/agents/${agent.id}`} className="font-semibold text-slate-100 hover:underline">
+                    {agent.name}
+                  </Link>
                   <p className="text-xs text-slate-400 mt-0.5">{agent.role}</p>
                 </div>
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${colorCls}`}>

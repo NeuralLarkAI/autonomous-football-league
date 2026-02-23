@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 interface Approval {
   id: string;
@@ -10,6 +11,7 @@ interface Approval {
   createdAt: string;
   agent: { id: string; name: string; department: string } | null;
   task: { id: string; title: string } | null;
+  proposal: { id: string; title: string; tier: number; status: string } | null;
 }
 
 const TIER_LABELS: Record<number, string> = {
@@ -86,9 +88,14 @@ export default function ApprovalsPage() {
                     {new Date(a.createdAt).toLocaleString()}
                   </span>
                 </div>
-                <p className="text-sm text-slate-200">{a.summary}</p>
+                <Link href={`/approvals/${a.id}`} className="text-sm text-slate-200 hover:underline">
+                  {a.summary}
+                </Link>
                 {a.task && (
                   <p className="text-xs text-slate-500">Task: {a.task.title}</p>
+                )}
+                {a.proposal && (
+                  <p className="text-xs text-slate-500">Proposal: {a.proposal.title}</p>
                 )}
                 <div className="flex gap-2 pt-1">
                   <button

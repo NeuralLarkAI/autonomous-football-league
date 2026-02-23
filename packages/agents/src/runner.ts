@@ -6,6 +6,30 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
   const agent = await prisma.agent.findUnique({ where: { id: agentId } });
   if (!agent) throw new Error(`Agent not found: ${agentId}`);
 
+  const startedAt = new Date();
+  const runRecord = await prisma.agentRun.create({
+    data: {
+      agentId: agent.id,
+      status: "SUCCESS",
+      startedAt,
+      finishedAt: startedAt,
+      outputsCreated: 0,
+      durationMs: 0,
+      error: "",
+    },
+  });
+
+  await prisma.eventLog.create({
+    data: {
+      agentId: agent.id,
+      type: "AGENT_RUN_START",
+      summary: `${agent.name} run started.`,
+      entityType: "AGENT",
+      entityId: agent.id,
+      meta: JSON.stringify({ runId: runRecord.id, agentId: agent.id }),
+    },
+  });
+
   const league = await prisma.leagueState.findUnique({ where: { id: "singleton" } });
   const seasonLocked = league?.seasonLock ?? false;
 
@@ -14,89 +38,145 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
   let approvalsCreated = 0;
   let eventsCreated = 0;
 
-  for (const tmpl of templates) {
-    const existing = await prisma.task.findFirst({ where: { title: tmpl.title } });
-    if (existing) continue;
+  try {
+    for (const tmpl of templates) {
+      const existing = await prisma.task.findFirst({ where: { title: tmpl.title } });
+      if (existing) continue;
 
-    if (seasonLocked && tmpl.tier >= 2) {
+      if (seasonLocked && tmpl.tier >= 2) {
+        await prisma.eventLog.create({
+          data: {
+            agentId: agent.id,
+            type: "AGENT_RUN",
+            tier: tmpl.tier,
+            summary: `[DEFERRED] ${agent.name} deferred Tier ${tmpl.tier} task \"${tmpl.title}\" - season locked.`,
+            entityType: "AGENT",
+            entityId: agent.id,
+            meta: JSON.stringify({ runId: runRecord.id, agentId, task: tmpl.title, tier: tmpl.tier }),
+          },
+        });
+        eventsCreated++;
+        continue;
+      }
+
+      const task = await prisma.task.create({
+        data: {
+          title: tmpl.title,
+          description: tmpl.description,
+          department: tmpl.department,
+          tier: tmpl.tier,
+          status: "BACKLOG",
+          assigneeId: agent.id,
+          acceptanceCriteria: tmpl.acceptanceCriteria,
+          riskNotes: tmpl.riskNotes,
+          testPlan: tmpl.testPlan,
+          rollbackPlan: tmpl.rollbackPlan,
+        },
+      });
+      tasksCreated++;
+
+      if (tmpl.requiresApproval && tmpl.approvalSummary) {
+        await prisma.approval.create({
+          data: {
+            taskId: task.id,
+            agentId: agent.id,
+            tier: tmpl.tier,
+            summary: tmpl.approvalSummary,
+            status: "PENDING",
+          },
+        });
+        approvalsCreated++;
+
+        await prisma.eventLog.create({
+          data: {
+            agentId: agent.id,
+            type: "APPROVAL_CREATED",
+            tier: tmpl.tier,
+            summary: `${agent.name} created Tier ${tmpl.tier} approval: \"${tmpl.approvalSummary}\"`,
+            entityType: "TASK",
+            entityId: task.id,
+            taskId: task.id,
+            meta: JSON.stringify({ runId: runRecord.id, taskId: task.id, tier: tmpl.tier }),
+          },
+        });
+        eventsCreated++;
+      }
+
       await prisma.eventLog.create({
         data: {
           agentId: agent.id,
-          type: "AGENT_RUN",
-          summary: `[DEFERRED] ${agent.name} deferred Tier ${tmpl.tier} task \"${tmpl.title}\" - season locked.`,
-          meta: JSON.stringify({ agentId, task: tmpl.title, tier: tmpl.tier }),
+          type: "TASK_CREATED",
+          tier: tmpl.tier,
+          summary: `${agent.name} created task \"${tmpl.title}\" [Tier ${tmpl.tier}]`,
+          entityType: "TASK",
+          entityId: task.id,
+          taskId: task.id,
+          meta: JSON.stringify({ runId: runRecord.id, taskId: task.id, tier: tmpl.tier, department: tmpl.department }),
         },
       });
       eventsCreated++;
-      continue;
     }
 
-    const task = await prisma.task.create({
+    const durationMs = Date.now() - startedAt.getTime();
+    await prisma.agentRun.update({
+      where: { id: runRecord.id },
       data: {
-        title: tmpl.title,
-        description: tmpl.description,
-        department: tmpl.department,
-        tier: tmpl.tier,
-        status: "BACKLOG",
-        assigneeId: agent.id,
-        acceptanceCriteria: tmpl.acceptanceCriteria,
-        riskNotes: tmpl.riskNotes,
-        testPlan: tmpl.testPlan,
-        rollbackPlan: tmpl.rollbackPlan,
+        status: "SUCCESS",
+        outputsCreated: tasksCreated + approvalsCreated,
+        durationMs,
+        finishedAt: new Date(),
+        error: "",
       },
     });
-    tasksCreated++;
-
-    if (tmpl.requiresApproval && tmpl.approvalSummary) {
-      await prisma.approval.create({
-        data: {
-          taskId: task.id,
-          agentId: agent.id,
-          tier: tmpl.tier,
-          summary: tmpl.approvalSummary,
-          status: "PENDING",
-        },
-      });
-      approvalsCreated++;
-
-      await prisma.eventLog.create({
-        data: {
-          agentId: agent.id,
-          type: "APPROVAL_CREATED",
-          summary: `${agent.name} created Tier ${tmpl.tier} approval: \"${tmpl.approvalSummary}\"`,
-          meta: JSON.stringify({ taskId: task.id, tier: tmpl.tier }),
-        },
-      });
-      eventsCreated++;
-    }
 
     await prisma.eventLog.create({
       data: {
         agentId: agent.id,
-        type: "TASK_CREATED",
-        summary: `${agent.name} created task \"${tmpl.title}\" [Tier ${tmpl.tier}]`,
-        meta: JSON.stringify({ taskId: task.id, tier: tmpl.tier, department: tmpl.department }),
+        type: "AGENT_RUN",
+        summary: `${agent.name} run complete - ${tasksCreated} task(s) created, ${approvalsCreated} approval(s) queued.`,
+        entityType: "AGENT",
+        entityId: agent.id,
+        meta: JSON.stringify({ runId: runRecord.id, agentId, tasksCreated, approvalsCreated, durationMs }),
       },
     });
     eventsCreated++;
+
+    return {
+      tasksCreated,
+      approvalsCreated,
+      eventsCreated,
+      summary: `${agent.name}: ${tasksCreated} tasks, ${approvalsCreated} approvals`,
+    };
+  } catch (error) {
+    const durationMs = Date.now() - startedAt.getTime();
+    await prisma.agentRun.update({
+      where: { id: runRecord.id },
+      data: {
+        status: "FAILED",
+        durationMs,
+        finishedAt: new Date(),
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+
+    await prisma.eventLog.create({
+      data: {
+        agentId: agent.id,
+        type: "AGENT_RUN_FAILED",
+        summary: `${agent.name} run failed.`,
+        entityType: "AGENT",
+        entityId: agent.id,
+        meta: JSON.stringify({
+          runId: runRecord.id,
+          agentId,
+          durationMs,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      },
+    });
+
+    throw error;
   }
-
-  await prisma.eventLog.create({
-    data: {
-      agentId: agent.id,
-      type: "AGENT_RUN",
-      summary: `${agent.name} run complete - ${tasksCreated} task(s) created, ${approvalsCreated} approval(s) queued.`,
-      meta: JSON.stringify({ agentId, tasksCreated, approvalsCreated }),
-    },
-  });
-  eventsCreated++;
-
-  return {
-    tasksCreated,
-    approvalsCreated,
-    eventsCreated,
-    summary: `${agent.name}: ${tasksCreated} tasks, ${approvalsCreated} approvals`,
-  };
 }
 
 export async function runKickoff(): Promise<{

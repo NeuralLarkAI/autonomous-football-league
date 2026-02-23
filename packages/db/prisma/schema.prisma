@@ -29,6 +29,7 @@ model Agent {
   requestedReviews ReviewRequest[] @relation("ReviewRequestedBy")
   assignedReviews  ReviewRequest[] @relation("ReviewRequestedTo")
   proposalsCreated Proposal[]      @relation("ProposalCreator")
+  messages         Message[]       @relation("MessageAuthor")
 }
 
 model Task {
@@ -163,6 +164,17 @@ model Incident {
   resolvedAt    DateTime?
 
   events EventLog[]
+}
+
+model Message {
+  id       String   @id @default(cuid())
+  agentId  String?
+  agent    Agent?   @relation("MessageAuthor", fields: [agentId], references: [id], onDelete: SetNull)
+  title    String
+  body     String
+  type     String   @default("REPORT") // REPORT|NOTE|ALERT
+  meta     String   @default("{}")
+  createdAt DateTime @default(now())
 }
 
 model LeagueState {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 type TaskStatus = "BACKLOG" | "IN_PROGRESS" | "REVIEW" | "DONE" | "BLOCKED";
 
@@ -14,6 +15,7 @@ interface Task {
   assignee: { id: string; name: string; department: string } | null;
   acceptanceCriteria: string;
   riskNotes: string;
+  _count?: { dependencies: number; blockedBy: number };
 }
 
 const COLUMNS: { key: TaskStatus; label: string; color: string }[] = [
@@ -102,11 +104,16 @@ export default function TasksPage() {
                       <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-bold ${TIER_COLORS[task.tier] ?? TIER_COLORS[1]}`}>
                         T{task.tier}
                       </span>
-                      <p className="text-xs font-medium text-slate-200 leading-snug">{task.title}</p>
+                      <Link href={`/tasks/${task.id}`} className="text-xs font-medium text-slate-200 leading-snug hover:underline">
+                        {task.title}
+                      </Link>
                     </div>
                     {task.assignee && (
                       <p className="text-xs text-slate-500">→ {task.assignee.name}</p>
                     )}
+                    <p className="text-[11px] text-slate-500">
+                      Depends on: {task._count?.dependencies ?? 0} · Blocked by: {task._count?.blockedBy ?? 0}
+                    </p>
                     <select
                       disabled={updating === task.id}
                       value={task.status}
