@@ -8,67 +8,188 @@ datasource db {
 }
 
 model Agent {
-  id          String   @id @default(cuid())
-  name        String
-  department  String
-  role        String
-  status      String   @default("ACTIVE") // ACTIVE | INACTIVE
-  permissions String   // JSON blob of AgentPermissions
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String   @id @default(cuid())
+  name              String
+  department        String
+  role              String
+  status            String   @default("ACTIVE") // ACTIVE | INACTIVE
+  permissions       String   // JSON blob of AgentPermissions
+  roleCardMd        String   @default("")
+  permissionScopes  String   @default("[]") // JSON array of scope strings
+  kpis              String   @default("{}") // JSON object of KPI counters
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  tasks     Task[]
-  approvals Approval[]
-  events    EventLog[]
+  tasks            Task[]
+  approvals        Approval[]
+  events           EventLog[]
+  runs             AgentRun[]
+  signoffs         Signoff[]
+  incidents        Incident[]      @relation("IncidentSource")
+  requestedReviews ReviewRequest[] @relation("ReviewRequestedBy")
+  assignedReviews  ReviewRequest[] @relation("ReviewRequestedTo")
+  proposalsCreated Proposal[]      @relation("ProposalCreator")
 }
 
 model Task {
-  id               String   @id @default(cuid())
-  title            String
-  description      String   @default("")
-  status           String   @default("BACKLOG") // BACKLOG|IN_PROGRESS|REVIEW|DONE|BLOCKED
-  tier             Int      @default(1)
-  department       String
-  acceptanceCriteria String  @default("")
-  riskNotes        String   @default("")
-  testPlan         String   @default("")
-  rollbackPlan     String   @default("")
-  assigneeId       String?
-  assignee         Agent?   @relation(fields: [assigneeId], references: [id])
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  title              String
+  description        String   @default("")
+  status             String   @default("BACKLOG") // BACKLOG|IN_PROGRESS|REVIEW|DONE|BLOCKED
+  tier               Int      @default(1)
+  department         String
+  acceptanceCriteria String   @default("")
+  riskNotes          String   @default("")
+  testPlan           String   @default("")
+  rollbackPlan       String   @default("")
+  signoffs           String   @default("[]") // JSON array of signoff agent IDs
+  assigneeId         String?
+  assignee           Agent?   @relation(fields: [assigneeId], references: [id])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  approvals Approval[]
+  approvals    Approval[]
+  proposals    Proposal[]
+  events       EventLog[]
+  dependencies TaskDependency[] @relation("TaskDependencies")
+  blockedBy    TaskDependency[] @relation("TaskBlockedBy")
+}
+
+model TaskDependency {
+  id              String @id @default(cuid())
+  taskId          String
+  dependsOnTaskId String
+
+  task          Task @relation("TaskDependencies", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnTask Task @relation("TaskBlockedBy", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnTaskId])
+}
+
+model Proposal {
+  id              String   @id @default(cuid())
+  title           String
+  summary         String
+  tier            Int
+  changeType      String
+  affectedArea    String
+  beforeJson      String   @default("{}")
+  afterJson       String   @default("{}")
+  risk            String   @default("")
+  testPlan        String   @default("")
+  rollbackPlan    String   @default("")
+  requiredSignoffs String  @default("[]") // JSON array of required agent IDs
+  status          String   @default("PENDING") // PENDING|APPROVED|REJECTED|DEFERRED
+  taskId          String?
+  task            Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  creatorAgentId  String?
+  creatorAgent    Agent?   @relation("ProposalCreator", fields: [creatorAgentId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  approvals      Approval[]
+  signoffs       Signoff[]
+  reviewRequests ReviewRequest[]
+  events         EventLog[]
 }
 
 model Approval {
-  id        String   @id @default(cuid())
-  taskId    String?
-  task      Task?    @relation(fields: [taskId], references: [id])
-  agentId   String
-  agent     Agent    @relation(fields: [agentId], references: [id])
-  tier      Int
-  summary   String
-  status    String   @default("PENDING") // PENDING|APPROVED|REJECTED|DEFERRED
-  signoffs  String   @default("[]") // JSON array of signoff agent IDs
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  taskId     String?
+  task       Task?    @relation(fields: [taskId], references: [id])
+  proposalId String?
+  proposal   Proposal? @relation(fields: [proposalId], references: [id])
+  agentId    String
+  agent      Agent    @relation(fields: [agentId], references: [id])
+  tier       Int
+  summary    String
+  status     String   @default("PENDING") // PENDING|APPROVED|REJECTED|DEFERRED
+  signoffs   String   @default("[]") // JSON array of signoff agent IDs
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  events EventLog[]
+}
+
+model Signoff {
+  id         String   @id @default(cuid())
+  proposalId String
+  proposal   Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  agentId    String
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status     String   @default("REQUESTED") // REQUESTED|APPROVED|CHANGES_REQUESTED
+  comment    String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([proposalId, agentId])
+}
+
+model ReviewRequest {
+  id               String   @id @default(cuid())
+  proposalId       String
+  proposal         Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  requesterAgentId String?
+  requesterAgent   Agent?   @relation("ReviewRequestedBy", fields: [requesterAgentId], references: [id], onDelete: SetNull)
+  targetAgentId    String?
+  targetAgent      Agent?   @relation("ReviewRequestedTo", fields: [targetAgentId], references: [id], onDelete: SetNull)
+  note             String   @default("")
+  status           String   @default("OPEN") // OPEN|FULFILLED|CLOSED
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model AgentRun {
+  id             String   @id @default(cuid())
+  agentId        String
+  agent          Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status         String   @default("SUCCESS") // SUCCESS|FAILED
+  outputsCreated Int      @default(0)
+  durationMs     Int      @default(0)
+  error          String   @default("")
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime @default(now())
+}
+
+model Incident {
+  id            String   @id @default(cuid())
+  severity      String   // LOW|MEDIUM|HIGH|CRITICAL
+  sourceAgentId String?
+  sourceAgent   Agent?   @relation("IncidentSource", fields: [sourceAgentId], references: [id], onDelete: SetNull)
+  title         String
+  description   String
+  status        String   @default("OPEN") // OPEN|INVESTIGATING|RESOLVED
+  createdAt     DateTime @default(now())
+  resolvedAt    DateTime?
+
+  events EventLog[]
 }
 
 model LeagueState {
-  id          String   @id @default("singleton")
-  season      Int      @default(0)
-  seasonLock  Boolean  @default(false)
-  phase       String   @default("PRE_SEASON")
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default("singleton")
+  season     Int      @default(0)
+  seasonLock Boolean  @default(false)
+  phase      String   @default("PRE_SEASON")
+  updatedAt  DateTime @updatedAt
 }
 
 model EventLog {
-  id        String   @id @default(cuid())
-  agentId   String?
-  agent     Agent?   @relation(fields: [agentId], references: [id])
-  type      String   // AGENT_RUN | TASK_CREATED | APPROVAL_CREATED | APPROVED | REJECTED | SEASON_LOCK | KICKOFF | SEED
-  summary   String
-  meta      String   @default("{}") // JSON
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  agentId    String?
+  agent      Agent?   @relation(fields: [agentId], references: [id])
+  type       String   // AGENT_RUN | TASK_CREATED | TASK_UPDATED | APPROVAL_CREATED | APPROVED | REJECTED | DEFERRED | SIGNOFF_* | PROPOSAL_* | INCIDENT_* | SEASON_LOCK | KICKOFF | SEED
+  tier       Int?
+  summary    String
+  meta       String   @default("{}") // JSON
+  entityType String?  // TASK | APPROVAL | PROPOSAL | INCIDENT | AGENT
+  entityId   String?
+  taskId     String?
+  task       Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  approvalId String?
+  approval   Approval? @relation(fields: [approvalId], references: [id], onDelete: SetNull)
+  proposalId String?
+  proposal   Proposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  incidentId String?
+  incident   Incident? @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
 }
