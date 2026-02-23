@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { runAgent, runKickoff, runCombine } from "@afl/agents";
+import { getActiveLeague } from "@/lib/request-league";
 
 function parsePayload(input: string): Record<string, unknown> {
   try {
@@ -14,13 +15,15 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const activeLeague = await getActiveLeague();
   const { id } = await params;
-  const runbook = await prisma.runbook.findUnique({ where: { id } });
+  const runbook = await prisma.runbook.findFirst({ where: { id, leagueId: activeLeague.id } });
   if (!runbook) return NextResponse.json({ error: "Runbook not found" }, { status: 404 });
   if (!runbook.isEnabled) return NextResponse.json({ error: "Runbook is disabled" }, { status: 409 });
 
   const runbookRun = await prisma.runbookRun.create({
     data: {
+      leagueId: activeLeague.id,
       runbookId: runbook.id,
       status: "RUNNING",
       startedAt: new Date(),
@@ -29,6 +32,7 @@ export async function POST(
 
   await prisma.eventLog.create({
     data: {
+      leagueId: activeLeague.id,
       agentId: runbook.ownerAgentId ?? undefined,
       type: "RUNBOOK_RUN_STARTED",
       summary: `Runbook started: ${runbook.name}`,
@@ -47,23 +51,24 @@ export async function POST(
     if (runbook.actionType === "RUN_AGENT") {
       const agentId = String(payload.agentId ?? "");
       if (!agentId) throw new Error("RUN_AGENT requires payload.agentId");
-      const result = await runAgent(agentId);
+      const result = await runAgent(agentId, activeLeague.id);
       outputSummary = result.summary;
     } else if (runbook.actionType === "RUN_KICKOFF") {
-      const result = await runKickoff();
+      const result = await runKickoff(activeLeague.id);
       outputSummary = `Kickoff: ${result.totalTasks} tasks, ${result.totalApprovals} approvals`;
     } else if (runbook.actionType === "RUN_COMBINE") {
       const agentId = String(payload.agentId ?? "");
       const runType = String(payload.runType ?? "COMBINE") as "COMBINE" | "SCRIMMAGE";
       if (!agentId) throw new Error("RUN_COMBINE requires payload.agentId");
-      const result = await runCombine(agentId, runType, Number(payload.seed ?? 42));
+      const result = await runCombine(agentId, runType, Number(payload.seed ?? 42), activeLeague.id);
       outputSummary = `Combine ${result.combineRunId}: overall ${result.scoreOverall}`;
     } else if (runbook.actionType === "GENERATE_REPORT") {
       const targetAgentId = String(payload.targetAgentId ?? "commissioner");
-      const agent = await prisma.agent.findUnique({ where: { id: targetAgentId } });
+      const agent = await prisma.agent.findFirst({ where: { id: targetAgentId, leagueId: activeLeague.id } });
       if (!agent) throw new Error("Report target agent not found");
       const message = await prisma.message.create({
         data: {
+          leagueId: activeLeague.id,
           agentId: agent.id,
           type: "REPORT",
           title: `${agent.name} Runbook Report`,
@@ -73,6 +78,7 @@ export async function POST(
       });
       await prisma.eventLog.create({
         data: {
+          leagueId: activeLeague.id,
           agentId: agent.id,
           type: "AGENT_WEEKLY_REPORT",
           summary: `${agent.name} report generated via runbook.`,
@@ -97,6 +103,7 @@ export async function POST(
 
     await prisma.eventLog.create({
       data: {
+        leagueId: activeLeague.id,
         agentId: runbook.ownerAgentId ?? undefined,
         type: "RUNBOOK_RUN_COMPLETED",
         summary: `Runbook completed: ${runbook.name}`,
@@ -121,6 +128,7 @@ export async function POST(
 
     await prisma.eventLog.create({
       data: {
+        leagueId: activeLeague.id,
         agentId: runbook.ownerAgentId ?? undefined,
         type: "RUNBOOK_RUN_FAILED",
         summary: `Runbook failed: ${runbook.name}`,

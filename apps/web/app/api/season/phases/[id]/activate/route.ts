@@ -1,27 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
+import { getActiveLeague } from "@/lib/request-league";
 
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const activeLeague = await getActiveLeague();
     const { id } = await params;
-    const phase = await prisma.seasonPhase.findUnique({ where: { id } });
+    const phase = await prisma.seasonPhase.findFirst({ where: { id, leagueId: activeLeague.id } });
     if (!phase) return NextResponse.json({ error: "Phase not found" }, { status: 404 });
 
     await prisma.$transaction(async (tx) => {
       await tx.seasonPhase.updateMany({
-        where: { seasonNumber: phase.seasonNumber, status: "ACTIVE", id: { not: phase.id } },
+        where: { leagueId: activeLeague.id, seasonNumber: phase.seasonNumber, status: "ACTIVE", id: { not: phase.id } },
         data: { status: "DONE" },
       });
       await tx.seasonPhase.update({ where: { id: phase.id }, data: { status: "ACTIVE" } });
       await tx.leagueState.update({
-        where: { id: "singleton" },
+        where: { leagueId: activeLeague.id },
         data: { phase: phase.name },
       });
       await tx.eventLog.create({
         data: {
+          leagueId: activeLeague.id,
           type: "SEASON_PHASE_ACTIVATED",
           summary: `Season phase activated: ${phase.name}`,
           entityType: "SEASON_PHASE",

@@ -15,7 +15,7 @@ function latencyScore(latencyMs: number): number {
   return Math.max(0, Math.min(100, 100 - latencyMs / 20));
 }
 
-async function runScenario(agentId: string, scenarioKey: ScenarioKey, seed: number): Promise<CombineScenarioResult> {
+async function runScenario(leagueId: string, agentId: string, scenarioKey: ScenarioKey, seed: number): Promise<CombineScenarioResult> {
   const started = Date.now();
   try {
     let passed = false;
@@ -25,6 +25,7 @@ async function runScenario(agentId: string, scenarioKey: ScenarioKey, seed: numb
     if (scenarioKey === "SCHEMA_VALIDATE_TASK") {
       const task = await prisma.task.create({
         data: {
+          leagueId,
           title: `[COMBINE ${seed}] Valid Tier1 Task ${Date.now()}`,
           description: "Deterministic combine scenario: valid task creation.",
           status: "BACKLOG",
@@ -43,6 +44,7 @@ async function runScenario(agentId: string, scenarioKey: ScenarioKey, seed: numb
     } else if (scenarioKey === "PROPOSAL_WRITE_TIER2") {
       const proposal = await prisma.proposal.create({
         data: {
+          leagueId,
           title: `[COMBINE ${seed}] Tier2 Proposal ${Date.now()}`,
           summary: "Deterministic tier2 proposal for harness.",
           tier: 2,
@@ -69,6 +71,7 @@ async function runScenario(agentId: string, scenarioKey: ScenarioKey, seed: numb
     } else if (scenarioKey === "INCIDENT_TRIAGE") {
       const incident = await prisma.incident.create({
         data: {
+          leagueId,
           severity: "HIGH",
           sourceAgentId: agentId,
           title: `[COMBINE ${seed}] Incident Triage ${Date.now()}`,
@@ -82,6 +85,7 @@ async function runScenario(agentId: string, scenarioKey: ScenarioKey, seed: numb
     } else if (scenarioKey === "SIGNOFF_REVIEW") {
       const proposal = await prisma.proposal.create({
         data: {
+          leagueId,
           title: `[COMBINE ${seed}] Signoff Review ${Date.now()}`,
           summary: "Proposal used for signoff scenario.",
           tier: 2,
@@ -106,15 +110,16 @@ async function runScenario(agentId: string, scenarioKey: ScenarioKey, seed: numb
       passed = compliance;
       output = { proposalId: proposal.id, signoffStatus: signoff.status };
     } else if (scenarioKey === "SEASON_LOCK_RESPECT") {
-      const state = await prisma.leagueState.findUnique({ where: { id: "singleton" } });
+      const state = await prisma.leagueState.findUnique({ where: { leagueId } });
       if (!state) throw new Error("League state missing");
       const wasLocked = state.seasonLock;
       if (!wasLocked) {
-        await prisma.leagueState.update({ where: { id: "singleton" }, data: { seasonLock: true } });
+        await prisma.leagueState.update({ where: { leagueId }, data: { seasonLock: true } });
       }
       try {
         await prisma.eventLog.create({
           data: {
+            leagueId,
             agentId,
             type: "DEFERRED",
             tier: 3,
@@ -126,7 +131,7 @@ async function runScenario(agentId: string, scenarioKey: ScenarioKey, seed: numb
         });
       } finally {
         if (!wasLocked) {
-          await prisma.leagueState.update({ where: { id: "singleton" }, data: { seasonLock: false } });
+          await prisma.leagueState.update({ where: { leagueId }, data: { seasonLock: false } });
         }
       }
       passed = true;
@@ -157,12 +162,14 @@ async function runScenario(agentId: string, scenarioKey: ScenarioKey, seed: numb
   }
 }
 
-export async function runCombine(agentId: string, runType: "COMBINE" | "SCRIMMAGE", seed = 42): Promise<CombineRunResult> {
-  const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+export async function runCombine(agentId: string, runType: "COMBINE" | "SCRIMMAGE", seed = 42, leagueId?: string): Promise<CombineRunResult> {
+  const agent = await prisma.agent.findFirst({ where: { id: agentId, leagueId: leagueId ?? undefined } });
   if (!agent) throw new Error(`Agent not found: ${agentId}`);
+  const activeLeagueId = leagueId ?? agent.leagueId;
 
   const run = await prisma.combineRun.create({
     data: {
+      leagueId: activeLeagueId,
       agentId,
       runType,
       status: "QUEUED",
@@ -173,6 +180,7 @@ export async function runCombine(agentId: string, runType: "COMBINE" | "SCRIMMAG
 
   await prisma.eventLog.create({
     data: {
+      leagueId: activeLeagueId,
       agentId,
       type: "COMBINE_RUN_CREATED",
       summary: `${runType} run queued for ${agent.name}`,
@@ -187,6 +195,7 @@ export async function runCombine(agentId: string, runType: "COMBINE" | "SCRIMMAG
   await prisma.combineRun.update({ where: { id: run.id }, data: { status: "RUNNING", startedAt } });
   await prisma.eventLog.create({
     data: {
+      leagueId: activeLeagueId,
       agentId,
       type: "COMBINE_RUN_STARTED",
       summary: `${runType} run started for ${agent.name}`,
@@ -201,10 +210,11 @@ export async function runCombine(agentId: string, runType: "COMBINE" | "SCRIMMAG
     const results: CombineScenarioResult[] = [];
     for (let i = 0; i < SCENARIOS.length; i++) {
       const scenarioKey = SCENARIOS[i];
-      const result = await runScenario(agentId, scenarioKey, seed + i);
+      const result = await runScenario(activeLeagueId, agentId, scenarioKey, seed + i);
       results.push(result);
       await prisma.combineScenarioResult.create({
         data: {
+          leagueId: activeLeagueId,
           combineRunId: run.id,
           scenarioKey: result.scenarioKey,
           passed: result.passed,
@@ -236,6 +246,7 @@ export async function runCombine(agentId: string, runType: "COMBINE" | "SCRIMMAG
 
     await prisma.eventLog.create({
       data: {
+        leagueId: activeLeagueId,
         agentId,
         type: "COMBINE_RUN_COMPLETED",
         summary: `${runType} run completed for ${agent.name} (overall ${scoreOverall})`,
@@ -274,6 +285,7 @@ export async function runCombine(agentId: string, runType: "COMBINE" | "SCRIMMAG
     });
     await prisma.eventLog.create({
       data: {
+        leagueId: activeLeagueId,
         agentId,
         type: "COMBINE_RUN_FAILED",
         summary: `${runType} run failed for ${agent.name}`,

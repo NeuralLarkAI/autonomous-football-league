@@ -3,6 +3,7 @@ import { TASK_TEMPLATES } from "./tasks";
 import type { AgentRunResult } from "./types";
 
 async function emitSocialPost(input: {
+  leagueId: string;
   agentId?: string;
   title: string;
   bodyMarkdown: string;
@@ -11,6 +12,7 @@ async function emitSocialPost(input: {
 }) {
   const post = await prisma.post.create({
     data: {
+      leagueId: input.leagueId,
       authorAgentId: input.agentId ?? null,
       title: input.title,
       bodyMarkdown: input.bodyMarkdown,
@@ -20,6 +22,7 @@ async function emitSocialPost(input: {
   });
   await prisma.eventLog.create({
     data: {
+      leagueId: input.leagueId,
       agentId: input.agentId,
       type: "SOCIAL_POST_CREATED",
       summary: `Social post created: ${post.title}`,
@@ -32,9 +35,10 @@ async function emitSocialPost(input: {
   return post;
 }
 
-async function runSocialBehaviors(agentId: string, tasksCreated: number, approvalsCreated: number) {
+async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreated: number, approvalsCreated: number) {
   if (agentId === "broadcast-media") {
     await emitSocialPost({
+      leagueId,
       agentId,
       title: `Weekly Recap Draft - ${new Date().toISOString().slice(0, 10)}`,
       bodyMarkdown: [
@@ -50,12 +54,13 @@ async function runSocialBehaviors(agentId: string, tasksCreated: number, approva
 
   if (agentId === "integrity") {
     const openIncidents = await prisma.incident.findMany({
-      where: { status: { not: "RESOLVED" } },
+      where: { leagueId, status: { not: "RESOLVED" } },
       orderBy: { createdAt: "desc" },
       take: 5,
     });
     if (openIncidents.length > 0) {
       await emitSocialPost({
+        leagueId,
         agentId,
         title: `Integrity Bulletin - ${new Date().toISOString().slice(0, 10)}`,
         bodyMarkdown: [
@@ -71,12 +76,13 @@ async function runSocialBehaviors(agentId: string, tasksCreated: number, approva
 
   if (agentId === "rules-committee") {
     const proposals = await prisma.proposal.findMany({
-      where: { status: "PENDING" },
+      where: { leagueId, status: "PENDING" },
       orderBy: { createdAt: "desc" },
       take: 5,
     });
     if (proposals.length > 0) {
       await emitSocialPost({
+        leagueId,
         agentId,
         title: `Rule Proposal Summary - ${new Date().toISOString().slice(0, 10)}`,
         bodyMarkdown: [
@@ -91,10 +97,11 @@ async function runSocialBehaviors(agentId: string, tasksCreated: number, approva
 
   if (agentId === "community-moderation") {
     const existing = await prisma.post.findFirst({
-      where: { title: "Community Guidelines", authorAgentId: agentId },
+      where: { leagueId, title: "Community Guidelines", authorAgentId: agentId },
     });
     if (!existing) {
       await emitSocialPost({
+        leagueId,
         agentId,
         title: "Community Guidelines",
         bodyMarkdown: [
@@ -110,6 +117,7 @@ async function runSocialBehaviors(agentId: string, tasksCreated: number, approva
 
     const flagged = await prisma.post.findMany({
       where: {
+        leagueId,
         isHidden: false,
         OR: [{ bodyMarkdown: { contains: "leak" } }, { bodyMarkdown: { contains: "exploit" } }],
       },
@@ -131,6 +139,7 @@ async function runSocialBehaviors(agentId: string, tasksCreated: number, approva
       });
       await prisma.eventLog.create({
         data: {
+          leagueId,
           agentId,
           type: "SOCIAL_MODERATION_ACTION",
           summary: `Auto-moderated post ${post.id.slice(-6)} by community moderation agent.`,
@@ -144,13 +153,15 @@ async function runSocialBehaviors(agentId: string, tasksCreated: number, approva
   }
 }
 
-export async function runAgent(agentId: string): Promise<AgentRunResult> {
-  const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+export async function runAgent(agentId: string, leagueId?: string): Promise<AgentRunResult> {
+  const agent = await prisma.agent.findFirst({ where: { id: agentId, leagueId: leagueId ?? undefined } });
   if (!agent) throw new Error(`Agent not found: ${agentId}`);
+  const activeLeagueId = leagueId ?? agent.leagueId;
 
   const startedAt = new Date();
   const runRecord = await prisma.agentRun.create({
     data: {
+      leagueId: activeLeagueId,
       agentId: agent.id,
       status: "SUCCESS",
       startedAt,
@@ -163,6 +174,7 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
 
   await prisma.eventLog.create({
     data: {
+      leagueId: activeLeagueId,
       agentId: agent.id,
       type: "AGENT_RUN_START",
       summary: `${agent.name} run started.`,
@@ -172,8 +184,8 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
     },
   });
 
-  const league = await prisma.leagueState.findUnique({ where: { id: "singleton" } });
-  const seasonLocked = league?.seasonLock ?? false;
+  const leagueState = await prisma.leagueState.findUnique({ where: { leagueId: activeLeagueId } });
+  const seasonLocked = leagueState?.seasonLock ?? false;
 
   const templates = TASK_TEMPLATES[agentId] ?? [];
   let tasksCreated = 0;
@@ -182,12 +194,13 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
 
   try {
     for (const tmpl of templates) {
-      const existing = await prisma.task.findFirst({ where: { title: tmpl.title } });
+      const existing = await prisma.task.findFirst({ where: { leagueId: activeLeagueId, title: tmpl.title } });
       if (existing) continue;
 
       if (seasonLocked && tmpl.tier >= 2) {
         await prisma.eventLog.create({
           data: {
+            leagueId: activeLeagueId,
             agentId: agent.id,
             type: "AGENT_RUN",
             tier: tmpl.tier,
@@ -203,6 +216,7 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
 
       const task = await prisma.task.create({
         data: {
+          leagueId: activeLeagueId,
           title: tmpl.title,
           description: tmpl.description,
           department: tmpl.department,
@@ -220,6 +234,7 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
       if (tmpl.requiresApproval && tmpl.approvalSummary) {
         await prisma.approval.create({
           data: {
+            leagueId: activeLeagueId,
             taskId: task.id,
             agentId: agent.id,
             tier: tmpl.tier,
@@ -231,6 +246,7 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
 
         await prisma.eventLog.create({
           data: {
+            leagueId: activeLeagueId,
             agentId: agent.id,
             type: "APPROVAL_CREATED",
             tier: tmpl.tier,
@@ -246,6 +262,7 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
 
       await prisma.eventLog.create({
         data: {
+          leagueId: activeLeagueId,
           agentId: agent.id,
           type: "TASK_CREATED",
           tier: tmpl.tier,
@@ -273,6 +290,7 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
 
     await prisma.eventLog.create({
       data: {
+        leagueId: activeLeagueId,
         agentId: agent.id,
         type: "AGENT_RUN",
         summary: `${agent.name} run complete - ${tasksCreated} task(s) created, ${approvalsCreated} approval(s) queued.`,
@@ -283,7 +301,7 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
     });
     eventsCreated++;
 
-    await runSocialBehaviors(agentId, tasksCreated, approvalsCreated);
+    await runSocialBehaviors(activeLeagueId, agentId, tasksCreated, approvalsCreated);
 
     return {
       tasksCreated,
@@ -305,6 +323,7 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
 
     await prisma.eventLog.create({
       data: {
+        leagueId: activeLeagueId,
         agentId: agent.id,
         type: "AGENT_RUN_FAILED",
         summary: `${agent.name} run failed.`,
@@ -327,6 +346,16 @@ export async function runKickoff(): Promise<{
   totalTasks: number;
   totalApprovals: number;
   agentResults: AgentRunResult[];
+}>;
+export async function runKickoff(leagueId: string): Promise<{
+  totalTasks: number;
+  totalApprovals: number;
+  agentResults: AgentRunResult[];
+}>;
+export async function runKickoff(leagueId = "league_afl_prime"): Promise<{
+  totalTasks: number;
+  totalApprovals: number;
+  agentResults: AgentRunResult[];
 }> {
   const KICKOFF_ORDER = [
     "commissioner",
@@ -342,10 +371,11 @@ export async function runKickoff(): Promise<{
     "rankings",
   ];
 
-  const league = await prisma.leagueState.findUnique({ where: { id: "singleton" } });
+  const league = await prisma.leagueState.findUnique({ where: { leagueId } });
   if (league?.seasonLock) {
     await prisma.eventLog.create({
       data: {
+        leagueId,
         type: "KICKOFF",
         summary: "Season 0 Kickoff blocked: season is locked.",
         meta: JSON.stringify({ seasonLock: true }),
@@ -356,6 +386,7 @@ export async function runKickoff(): Promise<{
 
   await prisma.eventLog.create({
     data: {
+      leagueId,
       type: "KICKOFF",
       summary: "Season 0 Kickoff initiated - running all department agents.",
       meta: JSON.stringify({ agents: KICKOFF_ORDER }),
@@ -365,7 +396,7 @@ export async function runKickoff(): Promise<{
   const results: AgentRunResult[] = [];
   for (const agentId of KICKOFF_ORDER) {
     try {
-      const result = await runAgent(agentId);
+      const result = await runAgent(agentId, leagueId);
       results.push(result);
     } catch (error) {
       console.error(`Agent ${agentId} failed:`, error);
@@ -375,13 +406,14 @@ export async function runKickoff(): Promise<{
   const totalTasks = results.reduce((sum, result) => sum + result.tasksCreated, 0);
   const totalApprovals = results.reduce((sum, result) => sum + result.approvalsCreated, 0);
   const [taskCount, tier23Approvals] = await Promise.all([
-    prisma.task.count(),
-    prisma.approval.count({ where: { tier: { gte: 2 } } }),
+    prisma.task.count({ where: { leagueId } }),
+    prisma.approval.count({ where: { leagueId, tier: { gte: 2 } } }),
   ]);
 
   if (taskCount < 30 || tier23Approvals === 0) {
     await prisma.eventLog.create({
       data: {
+        leagueId,
         type: "KICKOFF",
         summary: "Season 0 Kickoff incomplete - expected >=30 tasks and Tier 2/3 approvals.",
         meta: JSON.stringify({ totalTasks, totalApprovals, taskCount, tier23Approvals }),
@@ -392,6 +424,7 @@ export async function runKickoff(): Promise<{
 
   await prisma.eventLog.create({
     data: {
+      leagueId,
       type: "KICKOFF",
       summary: `Season 0 Kickoff complete - ${taskCount} total tasks, ${tier23Approvals} Tier 2/3 approvals present.`,
       meta: JSON.stringify({ totalTasks, totalApprovals, taskCount, tier23Approvals }),

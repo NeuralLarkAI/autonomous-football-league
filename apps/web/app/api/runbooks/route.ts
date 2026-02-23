@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { CreateRunbookSchema } from "@afl/core";
+import { getActiveLeague } from "@/lib/request-league";
 
 export async function GET() {
   try {
+    const league = await getActiveLeague();
     const runbooks = await prisma.runbook.findMany({
+      where: { leagueId: league.id },
       include: {
         ownerAgent: { select: { id: true, name: true, department: true } },
         runs: { orderBy: { createdAt: "desc" }, take: 10 },
@@ -20,12 +23,14 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const league = await getActiveLeague();
     const body = await req.json();
     const parsed = CreateRunbookSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
     const runbook = await prisma.runbook.create({
       data: {
+        leagueId: league.id,
         name: parsed.data.name,
         description: parsed.data.description,
         ownerAgentId: parsed.data.ownerAgentId ?? null,
@@ -39,6 +44,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.eventLog.create({
       data: {
+        leagueId: league.id,
         agentId: parsed.data.ownerAgentId ?? undefined,
         type: "RUNBOOK_CREATED",
         summary: `Runbook created: ${runbook.name}`,

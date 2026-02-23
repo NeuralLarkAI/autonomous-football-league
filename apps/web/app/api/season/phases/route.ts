@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { CreateSeasonPhaseSchema } from "@afl/core";
+import { getActiveLeague } from "@/lib/request-league";
 
 export async function GET() {
   try {
+    const league = await getActiveLeague();
     const phases = await prisma.seasonPhase.findMany({
+      where: { leagueId: league.id },
       orderBy: [{ seasonNumber: "asc" }, { startDate: "asc" }],
     });
     return NextResponse.json(phases);
@@ -16,12 +19,14 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const league = await getActiveLeague();
     const body = await req.json();
     const parsed = CreateSeasonPhaseSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
     const phase = await prisma.seasonPhase.create({
       data: {
+        leagueId: league.id,
         seasonNumber: parsed.data.seasonNumber,
         name: parsed.data.name,
         description: parsed.data.description,
@@ -33,6 +38,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.eventLog.create({
       data: {
+        leagueId: league.id,
         type: "SEASON_PHASE_CREATED",
         summary: `Season phase created: ${phase.name}`,
         entityType: "SEASON_PHASE",

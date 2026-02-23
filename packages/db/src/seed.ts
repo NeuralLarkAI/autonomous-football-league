@@ -1,8 +1,10 @@
 import { PrismaClient } from "@prisma/client";
+import crypto from "node:crypto";
 
 const prisma = new PrismaClient();
 const DEFAULT_LEAGUE_ID = "league_afl_prime";
 const DEFAULT_USER_ID = "user_commissioner_dev";
+const DEV_PASSWORD_HASH = crypto.createHash("sha256").update("afl_pw:dev-password").digest("hex");
 
 type SeedAgent = {
   id: string;
@@ -466,12 +468,12 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: "commissioner@afl.local" },
-    update: { displayName: "Commissioner Dev", passwordHash: "dev-only-change-me" },
+    update: { displayName: "Commissioner Dev", passwordHash: DEV_PASSWORD_HASH },
     create: {
       id: DEFAULT_USER_ID,
       email: "commissioner@afl.local",
       displayName: "Commissioner Dev",
-      passwordHash: "dev-only-change-me",
+      passwordHash: DEV_PASSWORD_HASH,
     },
   });
 
