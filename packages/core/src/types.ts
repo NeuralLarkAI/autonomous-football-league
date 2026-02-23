@@ -161,3 +161,44 @@ export const PatchRunbookSchema = z.object({
   cron: z.string().nullable().optional(),
   description: z.string().optional(),
 });
+
+export const UpdateSubmissionStatusSchema = z.object({
+  status: z.enum([
+    "DRAFT",
+    "UPLOADED",
+    "VALIDATING",
+    "VALID",
+    "INVALID",
+    "COMBINE_PENDING",
+    "COMBINE_PASSED",
+    "COMBINE_FAILED",
+    "RANKED_APPROVED",
+    "RETIRED",
+  ]),
+});
+
+export const RunSubmissionCombineSchema = z.object({
+  seed: z.number().int().optional(),
+});
+
+export const RequestRankedSubmissionSchema = z.object({
+  note: z.string().optional(),
+});
+
+export const ApproveRankedSubmissionSchema = z.object({
+  approved: z.boolean().default(true),
+  signoffAgentIds: z.array(z.string().min(1)).default([]),
+  note: z.string().optional(),
+});
+
+export const RunRankedDuelSchema = z.object({
+  agentAId: z.string().min(1),
+  agentBId: z.string().min(1),
+  seed: z.number().int().optional(),
+});
+
+export const CreateLeagueSettingsSchema = z.object({
+  isPublic: z.boolean().optional(),
+  publicName: z.string().optional(),
+  description: z.string().optional(),
+});

@@ -45,7 +45,7 @@ type AgentDetail = {
 };
 
 export default function AgentDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id, slug } = useParams<{ id: string; slug?: string }>();
   const [agent, setAgent] = useState<AgentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -150,6 +150,18 @@ export default function AgentDetailPage() {
           >
             {combining ? "Running..." : "Run Combine"}
           </button>
+          <Link
+            href={`/l/${slug ?? "afl-prime"}/agents/${id}/submissions`}
+            className="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-emerald-100"
+          >
+            Submissions
+          </Link>
+          <Link
+            href={`/l/${slug ?? "afl-prime"}/agents/${id}/keys`}
+            className="rounded-lg bg-slate-700 px-3 py-2 text-sm text-slate-100"
+          >
+            Keys
+          </Link>
         </div>
       </div>
 
