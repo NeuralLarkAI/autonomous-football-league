@@ -15,6 +15,11 @@ interface FeedEvent {
   approvalId: string | null;
   proposalId: string | null;
   incidentId: string | null;
+  postId: string | null;
+  combineRunId: string | null;
+  runbookId: string | null;
+  runbookRunId: string | null;
+  seasonPhaseId: string | null;
   agentId: string | null;
   agent: { id: string; name: string } | null;
 }
@@ -34,6 +39,21 @@ const TYPE_COLORS: Record<string, string> = {
   INCIDENT_RESOLVED: "bg-green-700/20 text-green-200",
   SEASON_LOCK: "bg-red-600/20 text-red-200",
   KICKOFF: "bg-purple-500/20 text-purple-300",
+  SOCIAL_POST_CREATED: "bg-pink-500/20 text-pink-300",
+  SOCIAL_COMMENT_CREATED: "bg-pink-700/20 text-pink-200",
+  SOCIAL_REACTION: "bg-rose-500/20 text-rose-300",
+  SOCIAL_MODERATION_ACTION: "bg-rose-700/20 text-rose-200",
+  COMBINE_RUN_CREATED: "bg-violet-500/20 text-violet-300",
+  COMBINE_RUN_STARTED: "bg-violet-600/20 text-violet-200",
+  COMBINE_RUN_COMPLETED: "bg-violet-700/20 text-violet-100",
+  COMBINE_RUN_FAILED: "bg-red-800/20 text-red-200",
+  SEASON_PHASE_CREATED: "bg-amber-500/20 text-amber-300",
+  SEASON_PHASE_ACTIVATED: "bg-amber-700/20 text-amber-200",
+  RUNBOOK_CREATED: "bg-cyan-500/20 text-cyan-300",
+  RUNBOOK_UPDATED: "bg-cyan-600/20 text-cyan-200",
+  RUNBOOK_RUN_STARTED: "bg-cyan-700/20 text-cyan-200",
+  RUNBOOK_RUN_COMPLETED: "bg-cyan-800/20 text-cyan-100",
+  RUNBOOK_RUN_FAILED: "bg-red-900/20 text-red-100",
   SEED: "bg-slate-500/20 text-slate-300",
 };
 
@@ -44,9 +64,17 @@ function eventHref(ev: FeedEvent): string | null {
   if (ev.entityType === "PROPOSAL" && ev.entityId) return "/approvals";
   if (ev.entityType === "INCIDENT" && ev.entityId) return `/incidents/${ev.entityId}`;
   if (ev.entityType === "AGENT" && ev.entityId) return `/agents/${ev.entityId}`;
+  if (ev.entityType === "POST" && ev.entityId) return `/social/${ev.entityId}`;
+  if (ev.entityType === "COMBINE_RUN" && ev.entityId) return `/combine/${ev.entityId}`;
+  if (ev.entityType === "RUNBOOK" && ev.entityId) return "/runbooks";
+  if (ev.entityType === "SEASON_PHASE" && ev.entityId) return "/season";
   if (ev.taskId) return `/tasks/${ev.taskId}`;
   if (ev.approvalId) return `/approvals/${ev.approvalId}`;
   if (ev.incidentId) return `/incidents/${ev.incidentId}`;
+  if (ev.postId) return `/social/${ev.postId}`;
+  if (ev.combineRunId) return `/combine/${ev.combineRunId}`;
+  if (ev.runbookId || ev.runbookRunId) return "/runbooks";
+  if (ev.seasonPhaseId) return "/season";
   if (ev.agentId) return `/agents/${ev.agentId}`;
   return null;
 }

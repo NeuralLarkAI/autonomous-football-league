@@ -135,3 +135,29 @@ export const ScrimmageRequestSchema = z.object({
   agentBId: z.string().min(1),
   seed: z.number().int().optional(),
 });
+
+export const CreateSeasonPhaseSchema = z.object({
+  seasonNumber: z.number().int().min(0),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  startDate: z.string().min(1),
+  endDate: z.string().min(1),
+  status: z.enum(["PLANNED", "ACTIVE", "DONE"]).default("PLANNED"),
+});
+
+export const CreateRunbookSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().min(1),
+  ownerAgentId: z.string().optional(),
+  triggerType: z.enum(["MANUAL", "SCHEDULED"]).default("MANUAL"),
+  cron: z.string().optional(),
+  actionType: z.enum(["RUN_AGENT", "RUN_KICKOFF", "RUN_COMBINE", "GENERATE_REPORT"]),
+  actionPayloadJson: z.string().optional(),
+  isEnabled: z.boolean().default(true),
+});
+
+export const PatchRunbookSchema = z.object({
+  isEnabled: z.boolean().optional(),
+  cron: z.string().nullable().optional(),
+  description: z.string().optional(),
+});

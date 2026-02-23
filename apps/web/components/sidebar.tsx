@@ -10,6 +10,8 @@ const NAV = [
   { href: "/approvals", label: "Approvals", icon: "OK"},
   { href: "/social", label: "Social", icon: "MB"},
   { href: "/combine", label: "Combine", icon: "CB"},
+  { href: "/season", label: "Season", icon: "S0"},
+  { href: "/runbooks", label: "Runbooks", icon: "RB"},
   { href: "/incidents", label: "Incidents", icon: "!!"},
   { href: "/ops", label: "Ops", icon: "{}"},
   { href: "/feed", label: "Activity Feed", icon: ".."},

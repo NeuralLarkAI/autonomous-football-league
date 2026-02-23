@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
             lastId = e.id;
           }
         } catch {
-          // DB might be busy — skip tick
+          // DB might be busy - skip tick
         }
       }, 2000);
 

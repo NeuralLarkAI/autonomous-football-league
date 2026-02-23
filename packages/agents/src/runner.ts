@@ -2,6 +2,148 @@ import { prisma } from "@afl/db";
 import { TASK_TEMPLATES } from "./tasks";
 import type { AgentRunResult } from "./types";
 
+async function emitSocialPost(input: {
+  agentId?: string;
+  title: string;
+  bodyMarkdown: string;
+  tags?: string[];
+  visibility?: "PUBLIC" | "LEAGUE_ONLY";
+}) {
+  const post = await prisma.post.create({
+    data: {
+      authorAgentId: input.agentId ?? null,
+      title: input.title,
+      bodyMarkdown: input.bodyMarkdown,
+      tags: (input.tags ?? []).join(","),
+      visibility: input.visibility ?? "LEAGUE_ONLY",
+    },
+  });
+  await prisma.eventLog.create({
+    data: {
+      agentId: input.agentId,
+      type: "SOCIAL_POST_CREATED",
+      summary: `Social post created: ${post.title}`,
+      entityType: "POST",
+      entityId: post.id,
+      postId: post.id,
+      meta: JSON.stringify({ postId: post.id, visibility: post.visibility, tags: input.tags ?? [] }),
+    },
+  });
+  return post;
+}
+
+async function runSocialBehaviors(agentId: string, tasksCreated: number, approvalsCreated: number) {
+  if (agentId === "broadcast-media") {
+    await emitSocialPost({
+      agentId,
+      title: `Weekly Recap Draft - ${new Date().toISOString().slice(0, 10)}`,
+      bodyMarkdown: [
+        "## League Weekly Recap Draft",
+        `- Tasks created this cycle: ${tasksCreated}`,
+        `- Approvals queued this cycle: ${approvalsCreated}`,
+        "- Focus: delivery pacing, governance clarity, and reliability hardening.",
+      ].join("\n"),
+      tags: ["weekly", "recap", "media"],
+      visibility: "PUBLIC",
+    });
+  }
+
+  if (agentId === "integrity") {
+    const openIncidents = await prisma.incident.findMany({
+      where: { status: { not: "RESOLVED" } },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
+    if (openIncidents.length > 0) {
+      await emitSocialPost({
+        agentId,
+        title: `Integrity Bulletin - ${new Date().toISOString().slice(0, 10)}`,
+        bodyMarkdown: [
+          "## Integrity Bulletin",
+          `Open incidents: ${openIncidents.length}`,
+          ...openIncidents.map((inc) => `- [${inc.severity}] ${inc.title} (${inc.status})`),
+        ].join("\n"),
+        tags: ["integrity", "bulletin", "incidents"],
+        visibility: "LEAGUE_ONLY",
+      });
+    }
+  }
+
+  if (agentId === "rules-committee") {
+    const proposals = await prisma.proposal.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
+    if (proposals.length > 0) {
+      await emitSocialPost({
+        agentId,
+        title: `Rule Proposal Summary - ${new Date().toISOString().slice(0, 10)}`,
+        bodyMarkdown: [
+          "## Pending Rule Proposals",
+          ...proposals.map((p) => `- [Tier ${p.tier}] ${p.title}: ${p.summary}`),
+        ].join("\n"),
+        tags: ["rules", "proposal-summary"],
+        visibility: "LEAGUE_ONLY",
+      });
+    }
+  }
+
+  if (agentId === "community-moderation") {
+    const existing = await prisma.post.findFirst({
+      where: { title: "Community Guidelines", authorAgentId: agentId },
+    });
+    if (!existing) {
+      await emitSocialPost({
+        agentId,
+        title: "Community Guidelines",
+        bodyMarkdown: [
+          "## Community Guidelines",
+          "1. Respect operational confidentiality.",
+          "2. Use evidence when challenging proposals.",
+          "3. Escalate incidents through official channels.",
+        ].join("\n"),
+        tags: ["community", "guidelines"],
+        visibility: "PUBLIC",
+      });
+    }
+
+    const flagged = await prisma.post.findMany({
+      where: {
+        isHidden: false,
+        OR: [{ bodyMarkdown: { contains: "leak" } }, { bodyMarkdown: { contains: "exploit" } }],
+      },
+      take: 5,
+      orderBy: { createdAt: "desc" },
+    });
+
+    for (const post of flagged) {
+      await prisma.post.update({ where: { id: post.id }, data: { isHidden: true, isLocked: true } });
+      await prisma.moderationAction.create({
+        data: {
+          targetType: "POST",
+          targetId: post.id,
+          action: "HIDE",
+          reason: "Auto-moderation: flagged potentially sensitive content.",
+          actorAgentId: agentId,
+          postId: post.id,
+        },
+      });
+      await prisma.eventLog.create({
+        data: {
+          agentId,
+          type: "SOCIAL_MODERATION_ACTION",
+          summary: `Auto-moderated post ${post.id.slice(-6)} by community moderation agent.`,
+          entityType: "POST",
+          entityId: post.id,
+          postId: post.id,
+          meta: JSON.stringify({ targetType: "POST", action: "HIDE", reason: "flagged content" }),
+        },
+      });
+    }
+  }
+}
+
 export async function runAgent(agentId: string): Promise<AgentRunResult> {
   const agent = await prisma.agent.findUnique({ where: { id: agentId } });
   if (!agent) throw new Error(`Agent not found: ${agentId}`);
@@ -140,6 +282,8 @@ export async function runAgent(agentId: string): Promise<AgentRunResult> {
       },
     });
     eventsCreated++;
+
+    await runSocialBehaviors(agentId, tasksCreated, approvalsCreated);
 
     return {
       tasksCreated,
