@@ -78,3 +78,17 @@ Open [http://localhost:3000](http://localhost:3000).
 Build the Commissioner Control Room infrastructure before any game simulation:
 agents exist as records, the orchestrator runs tasks, proposals flow through
 change control, and the Commissioner has full visibility and veto power.
+
+## Deploy on Railway
+
+This repo includes `railway.toml` for build/start commands.
+
+Set environment variable in Railway:
+
+```bash
+DATABASE_URL=file:./packages/db/prisma/dev.db
+```
+
+Notes:
+- This uses SQLite.
+- For persistent data across redeploys/restarts, mount a Railway volume and point `DATABASE_URL` to that mounted path (for example `file:/data/dev.db`).

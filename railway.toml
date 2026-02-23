@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "corepack enable && corepack pnpm install --frozen-lockfile && corepack pnpm build"
+
+[deploy]
+startCommand = "export DATABASE_URL=${DATABASE_URL:-file:./packages/db/prisma/dev.db}; corepack pnpm --filter @afl/db prisma:generate && corepack pnpm --filter @afl/db prisma:migrate:deploy && corepack pnpm --filter @afl/web start -- -p $PORT"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
