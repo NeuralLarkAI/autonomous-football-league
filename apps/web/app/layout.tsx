@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Sidebar } from "@/components/sidebar";
 
 export const metadata: Metadata = {
   title: "AFL Commissioner Control Room",
@@ -14,10 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="flex h-screen overflow-hidden bg-[#0a0f1e] text-slate-200">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
-      </body>
+      <body className="min-h-screen bg-[#0a0f1e] text-slate-200">{children}</body>
     </html>
   );
 }
