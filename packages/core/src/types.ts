@@ -124,3 +124,14 @@ export const ModerateSocialSchema = z.object({
   actorAgentId: z.string().optional(),
   tags: z.array(z.string().min(1)).optional(),
 });
+
+export const RunCombineSchema = z.object({
+  agentId: z.string().min(1),
+  runType: z.enum(["COMBINE", "SCRIMMAGE"]).default("COMBINE"),
+});
+
+export const ScrimmageRequestSchema = z.object({
+  agentAId: z.string().min(1),
+  agentBId: z.string().min(1),
+  seed: z.number().int().optional(),
+});

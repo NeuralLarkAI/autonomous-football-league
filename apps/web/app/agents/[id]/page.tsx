@@ -29,6 +29,19 @@ type AgentDetail = {
     durationMs: number;
     status: string;
   } | null;
+  lastCombineRun: {
+    id: string;
+    createdAt: string;
+    status: string;
+    scoreOverall: number;
+    scoreReliability: number;
+  } | null;
+  reliabilityTrend: Array<{
+    id: string;
+    createdAt: string;
+    scoreReliability: number;
+    scoreOverall: number;
+  }>;
 };
 
 export default function AgentDetailPage() {
@@ -37,6 +50,7 @@ export default function AgentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [combining, setCombining] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -75,6 +89,24 @@ export default function AgentDetailPage() {
     setReporting(false);
   };
 
+  const runCombine = async () => {
+    setCombining(true);
+    setMessage(null);
+    const res = await fetch("/api/combine/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentId: id, runType: "COMBINE" }),
+    });
+    const data = await res.json();
+    setMessage(
+      res.ok
+        ? `Combine complete: overall ${data.scoreOverall}, reliability ${data.scoreReliability}`
+        : data.error ?? "Combine failed"
+    );
+    await load();
+    setCombining(false);
+  };
+
   if (loading) return <p className="text-slate-400">Loading...</p>;
   if (!agent) return <p className="text-red-400">Agent not found.</p>;
 
@@ -88,6 +120,11 @@ export default function AgentDetailPage() {
           {agent.lastRun && (
             <p className="mt-1 text-xs text-slate-500">
               Last run: {new Date(agent.lastRun.startedAt).toLocaleString()} ({agent.lastRun.durationMs} ms, {agent.lastRun.status})
+            </p>
+          )}
+          {agent.lastCombineRun && (
+            <p className="mt-1 text-xs text-slate-500">
+              Last combine: {new Date(agent.lastCombineRun.createdAt).toLocaleString()} (overall {agent.lastCombineRun.scoreOverall}, reliability {agent.lastCombineRun.scoreReliability})
             </p>
           )}
         </div>
@@ -105,6 +142,13 @@ export default function AgentDetailPage() {
             className="rounded-lg bg-slate-700 px-3 py-2 text-sm text-slate-100 disabled:opacity-50"
           >
             {reporting ? "Generating..." : "Generate Weekly Report"}
+          </button>
+          <button
+            onClick={runCombine}
+            disabled={combining}
+            className="rounded-lg bg-purple-700 px-3 py-2 text-sm text-purple-100 disabled:opacity-50"
+          >
+            {combining ? "Running..." : "Run Combine"}
           </button>
         </div>
       </div>
@@ -139,6 +183,25 @@ export default function AgentDetailPage() {
               </p>
             ))}
           </div>
+        </div>
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <h2 className="mb-2 font-semibold text-slate-200">Reliability Trend</h2>
+          {agent.reliabilityTrend.length === 0 ? (
+            <p className="text-sm text-slate-500">No combine runs yet.</p>
+          ) : (
+            <div className="space-y-1 text-xs text-slate-300">
+              {agent.reliabilityTrend.slice(-5).map((r) => (
+                <p key={r.id}>
+                  {new Date(r.createdAt).toLocaleDateString()}: reliability {r.scoreReliability}, overall {r.scoreOverall}
+                </p>
+              ))}
+            </div>
+          )}
+          {agent.lastCombineRun && (
+            <Link href={`/combine/${agent.lastCombineRun.id}`} className="mt-2 inline-block text-xs text-blue-400 hover:underline">
+              View latest combine
+            </Link>
+          )}
         </div>
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4 md:col-span-2">
           <h2 className="mb-2 font-semibold text-slate-200">Open Tasks</h2>

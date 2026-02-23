@@ -18,11 +18,16 @@ export async function GET(
         },
         events: { orderBy: { createdAt: "desc" }, take: 25 },
         runs: { orderBy: { startedAt: "desc" }, take: 50 },
+        combineRuns: { orderBy: { createdAt: "desc" }, take: 10 },
       },
     });
     if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
 
     const lastRun = agent.runs[0] ?? null;
+    const lastCombineRun = agent.combineRuns[0] ?? null;
+    const reliabilityTrend = agent.combineRuns
+      .map((r) => ({ id: r.id, createdAt: r.createdAt, scoreReliability: r.scoreReliability, scoreOverall: r.scoreOverall }))
+      .reverse();
     const parsedScopes = (() => {
       try {
         return JSON.parse(agent.permissionScopes);
@@ -43,7 +48,10 @@ export async function GET(
       permissionScopesParsed: parsedScopes,
       kpisParsed: parsedKpis,
       lastRun,
+      lastCombineRun,
+      reliabilityTrend,
       runHistory: agent.runs,
+      combineHistory: agent.combineRuns,
       openTasks: agent.tasks,
       lastEvents: agent.events,
     });
