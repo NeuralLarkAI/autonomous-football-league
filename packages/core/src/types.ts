@@ -151,7 +151,16 @@ export const CreateRunbookSchema = z.object({
   ownerAgentId: z.string().optional(),
   triggerType: z.enum(["MANUAL", "SCHEDULED"]).default("MANUAL"),
   cron: z.string().optional(),
-  actionType: z.enum(["RUN_AGENT", "RUN_KICKOFF", "RUN_COMBINE", "GENERATE_REPORT"]),
+  actionType: z.enum([
+    "RUN_AGENT",
+    "RUN_KICKOFF",
+    "RUN_COMBINE",
+    "GENERATE_REPORT",
+    "SEASON1_SETUP",
+    "WEEK_SIMULATE",
+    "POST_WEEKLY_SLATE",
+    "POST_WEEKLY_RECAP",
+  ]),
   actionPayloadJson: z.string().optional(),
   isEnabled: z.boolean().default(true),
 });
