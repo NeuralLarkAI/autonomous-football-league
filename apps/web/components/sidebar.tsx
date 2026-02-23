@@ -11,6 +11,7 @@ const NAV = [
   { path: "/approvals", label: "Approvals", icon: "OK" },
   { path: "/social", label: "Social", icon: "MB" },
   { path: "/combine", label: "Combine", icon: "CB" },
+  { path: "/ranked", label: "Ranked", icon: "RD" },
   { path: "/season", label: "Season", icon: "S0" },
   { path: "/runbooks", label: "Runbooks", icon: "RB" },
   { path: "/connect", label: "Connect", icon: "CN" },

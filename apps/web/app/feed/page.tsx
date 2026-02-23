@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 interface FeedEvent {
@@ -54,32 +55,45 @@ const TYPE_COLORS: Record<string, string> = {
   RUNBOOK_RUN_STARTED: "bg-cyan-700/20 text-cyan-200",
   RUNBOOK_RUN_COMPLETED: "bg-cyan-800/20 text-cyan-100",
   RUNBOOK_RUN_FAILED: "bg-red-900/20 text-red-100",
+  SUBMISSION_UPLOADED: "bg-emerald-500/20 text-emerald-300",
+  SUBMISSION_VALIDATED: "bg-emerald-600/20 text-emerald-200",
+  SUBMISSION_INVALID: "bg-red-600/20 text-red-200",
+  SUBMISSION_COMBINE_RUN: "bg-violet-500/20 text-violet-300",
+  SUBMISSION_RANKED_REQUESTED: "bg-amber-500/20 text-amber-300",
+  SUBMISSION_RANKED_APPROVED: "bg-green-600/20 text-green-200",
+  RANKED_DUEL: "bg-blue-600/20 text-blue-200",
+  RATE_LIMIT: "bg-orange-600/20 text-orange-200",
+  SPAM: "bg-red-700/20 text-red-200",
   SEED: "bg-slate-500/20 text-slate-300",
 };
 
-function eventHref(ev: FeedEvent): string | null {
-  if (ev.entityType === "TASK" && ev.entityId) return `/tasks/${ev.entityId}`;
-  if (ev.entityType === "APPROVAL" && ev.entityId) return `/approvals/${ev.entityId}`;
-  if (ev.entityType === "PROPOSAL" && ev.approvalId) return `/approvals/${ev.approvalId}`;
-  if (ev.entityType === "PROPOSAL" && ev.entityId) return "/approvals";
-  if (ev.entityType === "INCIDENT" && ev.entityId) return `/incidents/${ev.entityId}`;
-  if (ev.entityType === "AGENT" && ev.entityId) return `/agents/${ev.entityId}`;
-  if (ev.entityType === "POST" && ev.entityId) return `/social/${ev.entityId}`;
-  if (ev.entityType === "COMBINE_RUN" && ev.entityId) return `/combine/${ev.entityId}`;
-  if (ev.entityType === "RUNBOOK" && ev.entityId) return "/runbooks";
-  if (ev.entityType === "SEASON_PHASE" && ev.entityId) return "/season";
-  if (ev.taskId) return `/tasks/${ev.taskId}`;
-  if (ev.approvalId) return `/approvals/${ev.approvalId}`;
-  if (ev.incidentId) return `/incidents/${ev.incidentId}`;
-  if (ev.postId) return `/social/${ev.postId}`;
-  if (ev.combineRunId) return `/combine/${ev.combineRunId}`;
-  if (ev.runbookId || ev.runbookRunId) return "/runbooks";
-  if (ev.seasonPhaseId) return "/season";
-  if (ev.agentId) return `/agents/${ev.agentId}`;
+function eventHref(base: string, ev: FeedEvent): string | null {
+  if (ev.type === "RANKED_DUEL") return `${base}/ranked`;
+  if (ev.entityType === "TASK" && ev.entityId) return `${base}/tasks/${ev.entityId}`;
+  if (ev.entityType === "APPROVAL" && ev.entityId) return `${base}/approvals/${ev.entityId}`;
+  if (ev.entityType === "PROPOSAL" && ev.approvalId) return `${base}/approvals/${ev.approvalId}`;
+  if (ev.entityType === "PROPOSAL" && ev.entityId) return `${base}/approvals`;
+  if (ev.entityType === "INCIDENT" && ev.entityId) return `${base}/incidents/${ev.entityId}`;
+  if (ev.entityType === "AGENT" && ev.entityId) return `${base}/agents/${ev.entityId}`;
+  if (ev.entityType === "POST" && ev.entityId) return `${base}/social/${ev.entityId}`;
+  if (ev.entityType === "COMBINE_RUN" && ev.entityId) return `${base}/combine/${ev.entityId}`;
+  if (ev.entityType === "RUNBOOK" && ev.entityId) return `${base}/runbooks`;
+  if (ev.entityType === "SEASON_PHASE" && ev.entityId) return `${base}/season`;
+  if (ev.taskId) return `${base}/tasks/${ev.taskId}`;
+  if (ev.approvalId) return `${base}/approvals/${ev.approvalId}`;
+  if (ev.incidentId) return `${base}/incidents/${ev.incidentId}`;
+  if (ev.postId) return `${base}/social/${ev.postId}`;
+  if (ev.combineRunId) return `${base}/combine/${ev.combineRunId}`;
+  if (ev.runbookId || ev.runbookRunId) return `${base}/runbooks`;
+  if (ev.seasonPhaseId) return `${base}/season`;
+  if (ev.agentId) return `${base}/agents/${ev.agentId}`;
   return null;
 }
 
 export default function FeedPage() {
+  const pathname = usePathname();
+  const leagueSlug = pathname.split("/")[2] || "afl-prime";
+  const base = `/l/${leagueSlug}`;
   const [events, setEvents] = useState<FeedEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [filterAgent, setFilterAgent] = useState("");
@@ -169,7 +183,7 @@ export default function FeedPage() {
         <div className="space-y-2">
           {filtered.map((ev) => {
             const typeColor = TYPE_COLORS[ev.type] ?? "bg-slate-500/20 text-slate-300";
-            const href = eventHref(ev);
+            const href = eventHref(base, ev);
             const body = (
               <>
                 <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${typeColor}`}>{ev.type.replace(/_/g, " ")}</span>

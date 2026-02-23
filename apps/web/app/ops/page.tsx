@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 type FeedEvent = {
   id: string;
@@ -34,6 +35,8 @@ function isAlert(ev: FeedEvent) {
 }
 
 export default function OpsPage() {
+  const pathname = usePathname();
+  const leagueSlug = pathname.split("/")[2] || "afl-prime";
   const [events, setEvents] = useState<FeedEvent[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
@@ -86,7 +89,12 @@ export default function OpsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-slate-100">Ops</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-slate-100">Ops</h1>
+        <Link href={`/l/${leagueSlug}/ops/abuse`} className="rounded bg-red-700 px-3 py-1.5 text-xs text-red-100">
+          Abuse Panel
+        </Link>
+      </div>
 
       <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">

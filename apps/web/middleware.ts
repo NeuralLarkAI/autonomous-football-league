@@ -12,13 +12,14 @@ const LEGACY_MAP: Record<string, string> = {
   "/feed": "/feed",
   "/social": "/social",
   "/combine": "/combine",
+  "/ranked": "/ranked",
   "/season": "/season",
   "/runbooks": "/runbooks",
   "/incidents": "/incidents",
 };
 
 function isPublicPath(pathname: string): boolean {
-  return pathname.startsWith("/login") || pathname.startsWith("/claim/");
+  return pathname.startsWith("/login") || pathname.startsWith("/claim/") || pathname.startsWith("/p/");
 }
 
 export function middleware(req: NextRequest) {
