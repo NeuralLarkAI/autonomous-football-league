@@ -1,6 +1,7 @@
 import { prisma } from "@afl/db";
 import { TASK_TEMPLATES } from "./tasks";
-import type { AgentRunResult } from "./types";
+import { SEASON0_AGENT_DELIVERABLES } from "./season0-deliverables";
+import type { AgentRunObservedCounts, AgentRunOutputRefs, AgentRunResult } from "./types";
 
 type SeasonOneChecklistItem = {
   key: string;
@@ -404,7 +405,7 @@ async function emitSocialPost(input: {
       visibility: input.visibility ?? "LEAGUE_ONLY",
     },
   });
-  await prisma.eventLog.create({
+  const eventLog = await prisma.eventLog.create({
     data: {
       leagueId: input.leagueId,
       agentId: input.agentId,
@@ -416,12 +417,23 @@ async function emitSocialPost(input: {
       meta: JSON.stringify({ postId: post.id, visibility: post.visibility, tags: input.tags ?? [] }),
     },
   });
-  return post;
+  return { post, eventLog };
 }
 
-async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreated: number, approvalsCreated: number) {
+async function runSocialBehaviors(
+  leagueId: string,
+  agentId: string,
+  tasksCreated: number,
+  approvalsCreated: number
+): Promise<{ postsCreated: number; eventsCreated: number; postIds: string[]; eventLogIds: string[]; moderationActionIds: string[] }> {
+  let postsCreated = 0;
+  let eventsCreated = 0;
+  const postIds: string[] = [];
+  const eventLogIds: string[] = [];
+  const moderationActionIds: string[] = [];
+
   if (agentId === "broadcast-media") {
-    await emitSocialPost({
+    const created = await emitSocialPost({
       leagueId,
       agentId,
       title: `Weekly Recap Draft - ${new Date().toISOString().slice(0, 10)}`,
@@ -434,6 +446,10 @@ async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreate
       tags: ["weekly", "recap", "media"],
       visibility: "PUBLIC",
     });
+    postsCreated += 1;
+    eventsCreated += 1;
+    postIds.push(created.post.id);
+    eventLogIds.push(created.eventLog.id);
   }
 
   if (agentId === "integrity") {
@@ -443,7 +459,7 @@ async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreate
       take: 5,
     });
     if (openIncidents.length > 0) {
-      await emitSocialPost({
+      const created = await emitSocialPost({
         leagueId,
         agentId,
         title: `Integrity Bulletin - ${new Date().toISOString().slice(0, 10)}`,
@@ -455,6 +471,10 @@ async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreate
         tags: ["integrity", "bulletin", "incidents"],
         visibility: "LEAGUE_ONLY",
       });
+      postsCreated += 1;
+      eventsCreated += 1;
+      postIds.push(created.post.id);
+      eventLogIds.push(created.eventLog.id);
     }
   }
 
@@ -465,7 +485,7 @@ async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreate
       take: 5,
     });
     if (proposals.length > 0) {
-      await emitSocialPost({
+      const created = await emitSocialPost({
         leagueId,
         agentId,
         title: `Rule Proposal Summary - ${new Date().toISOString().slice(0, 10)}`,
@@ -476,6 +496,10 @@ async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreate
         tags: ["rules", "proposal-summary"],
         visibility: "LEAGUE_ONLY",
       });
+      postsCreated += 1;
+      eventsCreated += 1;
+      postIds.push(created.post.id);
+      eventLogIds.push(created.eventLog.id);
     }
   }
 
@@ -484,7 +508,7 @@ async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreate
       where: { leagueId, title: "Community Guidelines", authorAgentId: agentId },
     });
     if (!existing) {
-      await emitSocialPost({
+      const created = await emitSocialPost({
         leagueId,
         agentId,
         title: "Community Guidelines",
@@ -497,6 +521,10 @@ async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreate
         tags: ["community", "guidelines"],
         visibility: "PUBLIC",
       });
+      postsCreated += 1;
+      eventsCreated += 1;
+      postIds.push(created.post.id);
+      eventLogIds.push(created.eventLog.id);
     }
 
     const flagged = await prisma.post.findMany({
@@ -511,7 +539,7 @@ async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreate
 
     for (const post of flagged) {
       await prisma.post.update({ where: { id: post.id }, data: { isHidden: true, isLocked: true } });
-      await prisma.moderationAction.create({
+      const moderationAction = await prisma.moderationAction.create({
         data: {
           targetType: "POST",
           targetId: post.id,
@@ -521,7 +549,8 @@ async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreate
           postId: post.id,
         },
       });
-      await prisma.eventLog.create({
+      moderationActionIds.push(moderationAction.id);
+      const moderationEvent = await prisma.eventLog.create({
         data: {
           leagueId,
           agentId,
@@ -533,14 +562,44 @@ async function runSocialBehaviors(leagueId: string, agentId: string, tasksCreate
           meta: JSON.stringify({ targetType: "POST", action: "HIDE", reason: "flagged content" }),
         },
       });
+      eventsCreated += 1;
+      eventLogIds.push(moderationEvent.id);
     }
   }
+
+  return { postsCreated, eventsCreated, postIds, eventLogIds, moderationActionIds };
 }
 
 export async function runAgent(agentId: string, leagueId?: string): Promise<AgentRunResult> {
   const agent = await prisma.agent.findFirst({ where: { id: agentId, leagueId: leagueId ?? undefined } });
   if (!agent) throw new Error(`Agent not found: ${agentId}`);
   const activeLeagueId = leagueId ?? agent.leagueId;
+  const deliverablesPlan = SEASON0_AGENT_DELIVERABLES[agentId];
+
+  const outputs: AgentRunOutputRefs = {
+    taskIds: [],
+    approvalIds: [],
+    proposalIds: [],
+    incidentIds: [],
+    combineRunIds: [],
+    postIds: [],
+    runbookIds: [],
+    signoffIds: [],
+    moderationActionIds: [],
+    eventLogIds: [],
+  };
+  const observed: AgentRunObservedCounts = {
+    tasksCreated: 0,
+    approvalsCreated: 0,
+    proposalsCreated: 0,
+    incidentsCreated: 0,
+    combineRunsCreated: 0,
+    socialPostsCreated: 0,
+    runbooksCreated: 0,
+    signoffRequestsCreated: 0,
+    moderationActionsCreated: 0,
+    eventsCreated: 0,
+  };
 
   const startedAt = new Date();
   const runRecord = await prisma.agentRun.create({
@@ -556,7 +615,7 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
     },
   });
 
-  await prisma.eventLog.create({
+  const startEvent = await prisma.eventLog.create({
     data: {
       leagueId: activeLeagueId,
       agentId: agent.id,
@@ -564,9 +623,10 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
       summary: `${agent.name} run started.`,
       entityType: "AGENT",
       entityId: agent.id,
-      meta: JSON.stringify({ runId: runRecord.id, agentId: agent.id }),
+      meta: JSON.stringify({ runId: runRecord.id, agentId: agent.id, deliverablesPlan }),
     },
   });
+  outputs.eventLogIds.push(startEvent.id);
 
   const leagueState = await prisma.leagueState.findUnique({ where: { leagueId: activeLeagueId } });
   const seasonLocked = leagueState?.seasonLock ?? false;
@@ -582,7 +642,7 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
       if (existing) continue;
 
       if (seasonLocked && tmpl.tier >= 2) {
-        await prisma.eventLog.create({
+        const deferredEvent = await prisma.eventLog.create({
           data: {
             leagueId: activeLeagueId,
             agentId: agent.id,
@@ -595,6 +655,7 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
           },
         });
         eventsCreated++;
+        outputs.eventLogIds.push(deferredEvent.id);
         continue;
       }
 
@@ -614,9 +675,10 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
         },
       });
       tasksCreated++;
+      outputs.taskIds.push(task.id);
 
       if (tmpl.requiresApproval && tmpl.approvalSummary) {
-        await prisma.approval.create({
+        const approval = await prisma.approval.create({
           data: {
             leagueId: activeLeagueId,
             taskId: task.id,
@@ -627,8 +689,9 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
           },
         });
         approvalsCreated++;
+        outputs.approvalIds.push(approval.id);
 
-        await prisma.eventLog.create({
+        const approvalEvent = await prisma.eventLog.create({
           data: {
             leagueId: activeLeagueId,
             agentId: agent.id,
@@ -642,9 +705,10 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
           },
         });
         eventsCreated++;
+        outputs.eventLogIds.push(approvalEvent.id);
       }
 
-      await prisma.eventLog.create({
+      const taskEvent = await prisma.eventLog.create({
         data: {
           leagueId: activeLeagueId,
           agentId: agent.id,
@@ -658,6 +722,7 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
         },
       });
       eventsCreated++;
+      outputs.eventLogIds.push(taskEvent.id);
     }
 
     const seasonOneBehavior = await runSeasonOneAgentBehaviors(activeLeagueId, agentId);
@@ -676,7 +741,7 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
       },
     });
 
-    await prisma.eventLog.create({
+    const completedEvent = await prisma.eventLog.create({
       data: {
         leagueId: activeLeagueId,
         agentId: agent.id,
@@ -688,14 +753,33 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
       },
     });
     eventsCreated++;
+    outputs.eventLogIds.push(completedEvent.id);
 
-    await runSocialBehaviors(activeLeagueId, agentId, tasksCreated, approvalsCreated);
+    const socialBehavior = await runSocialBehaviors(activeLeagueId, agentId, tasksCreated, approvalsCreated);
+    outputs.postIds.push(...socialBehavior.postIds);
+    outputs.eventLogIds.push(...socialBehavior.eventLogIds);
+    outputs.moderationActionIds.push(...socialBehavior.moderationActionIds);
+    eventsCreated += socialBehavior.eventsCreated;
+
+    observed.tasksCreated = tasksCreated;
+    observed.approvalsCreated = approvalsCreated;
+    observed.proposalsCreated = outputs.proposalIds.length;
+    observed.incidentsCreated = outputs.incidentIds.length;
+    observed.combineRunsCreated = outputs.combineRunIds.length;
+    observed.socialPostsCreated = socialBehavior.postsCreated;
+    observed.runbooksCreated = outputs.runbookIds.length;
+    observed.signoffRequestsCreated = outputs.signoffIds.length;
+    observed.moderationActionsCreated = outputs.moderationActionIds.length;
+    observed.eventsCreated = eventsCreated;
 
     return {
       tasksCreated,
       approvalsCreated,
       eventsCreated,
       summary: `${agent.name}: ${tasksCreated} tasks, ${approvalsCreated} approvals`,
+      outputs,
+      observed,
+      deliverablesPlan,
     };
   } catch (error) {
     const durationMs = Date.now() - startedAt.getTime();
@@ -709,7 +793,7 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
       },
     });
 
-    await prisma.eventLog.create({
+    const failedEvent = await prisma.eventLog.create({
       data: {
         leagueId: activeLeagueId,
         agentId: agent.id,
@@ -725,6 +809,7 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
         }),
       },
     });
+    outputs.eventLogIds.push(failedEvent.id);
 
     throw error;
   }
