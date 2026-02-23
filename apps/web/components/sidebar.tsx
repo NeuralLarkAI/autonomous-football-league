@@ -8,6 +8,8 @@ const NAV = [
   { path: "/dashboard", label: "Dashboard", icon: "[]" },
   { path: "/agents", label: "Agents", icon: "<>" },
   { path: "/tasks", label: "Tasks", icon: "##" },
+  { path: "/games", label: "Games", icon: "GM" },
+  { path: "/standings", label: "Standings", icon: "ST" },
   { path: "/approvals", label: "Approvals", icon: "OK" },
   { path: "/social", label: "Social", icon: "MB" },
   { path: "/combine", label: "Combine", icon: "CB" },

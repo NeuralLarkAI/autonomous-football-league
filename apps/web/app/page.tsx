@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 interface DashboardStats {
   agentCount: number;
@@ -29,23 +30,41 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
+  const pathname = usePathname();
+  const leagueSlug = pathname.split("/")[2] || "afl-prime";
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [liveGames, setLiveGames] = useState<Array<{ id: string; week: number; awayTeam: { shortName: string }; homeTeam: { shortName: string }; scoreAway: number; scoreHome: number }>>([]);
+  const [nextGames, setNextGames] = useState<Array<{ id: string; week: number; awayTeam: { shortName: string }; homeTeam: { shortName: string }; kickoffAt: string | null }>>([]);
+  const [socialPreview, setSocialPreview] = useState<Array<{ id: string; title: string; createdAt: string }>>([]);
+  const [ladderPreview, setLadderPreview] = useState<Array<{ agentId: string; agentName: string; rating: number }>>([]);
   const [kickingOff, setKickingOff] = useState(false);
   const [togglingLock, setTogglingLock] = useState(false);
   const [quickAction, setQuickAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const load = () =>
-    fetch("/api/dashboard")
-      .then((r) => r.json())
-      .then(setStats)
-      .catch(() => {});
+  const load = useCallback(
+    () =>
+    Promise.all([
+      fetch("/api/dashboard").then((r) => r.json()).catch(() => null),
+      fetch(`/api/l/${leagueSlug}/games?status=LIVE`).then((r) => r.json()).catch(() => []),
+      fetch(`/api/l/${leagueSlug}/games?status=SCHEDULED`).then((r) => r.json()).catch(() => []),
+      fetch("/api/social/posts").then((r) => r.json()).catch(() => []),
+      fetch(`/api/l/${leagueSlug}/ranked`).then((r) => r.json()).catch(() => ({ leaderboard: [] })),
+    ]).then(([dashboard, live, scheduled, social, ranked]) => {
+      setStats(dashboard);
+      setLiveGames(Array.isArray(live) ? live.slice(0, 3) : []);
+      setNextGames(Array.isArray(scheduled) ? scheduled.slice(0, 3) : []);
+      setSocialPreview(Array.isArray(social) ? social.slice(0, 3) : []);
+      setLadderPreview(Array.isArray(ranked?.leaderboard) ? ranked.leaderboard.slice(0, 10) : []);
+    }),
+    [leagueSlug]
+  );
 
   useEffect(() => {
     load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
-  }, []);
+  }, [load]);
 
   const runKickoff = async () => {
     setKickingOff(true);
@@ -175,6 +194,73 @@ export default function DashboardPage() {
           <Link href="/runbooks" className="mt-2 inline-block text-xs text-blue-400 hover:underline">
             Open runbooks
           </Link>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <h2 className="text-sm font-semibold text-slate-200">Live Now</h2>
+          {liveGames.length === 0 ? (
+            <p className="mt-1 text-sm text-slate-500">No live games.</p>
+          ) : (
+            <div className="mt-2 space-y-1 text-sm text-slate-300">
+              {liveGames.map((g) => (
+                <Link key={g.id} href={`/l/${leagueSlug}/games/${g.id}`} className="block hover:underline">
+                  W{g.week} {g.awayTeam.shortName} {g.scoreAway} - {g.homeTeam.shortName} {g.scoreHome}
+                </Link>
+              ))}
+            </div>
+          )}
+          <Link href={`/l/${leagueSlug}/games`} className="mt-2 inline-block text-xs text-blue-400 hover:underline">
+            Open Game Center
+          </Link>
+        </div>
+
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <h2 className="text-sm font-semibold text-slate-200">Next Up</h2>
+          {nextGames.length === 0 ? (
+            <p className="mt-1 text-sm text-slate-500">No scheduled games.</p>
+          ) : (
+            <div className="mt-2 space-y-1 text-sm text-slate-300">
+              {nextGames.map((g) => (
+                <p key={g.id}>
+                  W{g.week} {g.awayTeam.shortName} @ {g.homeTeam.shortName}{" "}
+                  <span className="text-xs text-slate-500">{g.kickoffAt ? new Date(g.kickoffAt).toLocaleDateString() : "TBD"}</span>
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <h2 className="text-sm font-semibold text-slate-200">Social Preview</h2>
+          {socialPreview.length === 0 ? (
+            <p className="mt-1 text-sm text-slate-500">No posts yet.</p>
+          ) : (
+            <div className="mt-2 space-y-1 text-sm text-slate-300">
+              {socialPreview.map((p) => (
+                <Link key={p.id} href={`/l/${leagueSlug}/social/${p.id}`} className="block hover:underline">
+                  {p.title}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <h2 className="text-sm font-semibold text-slate-200">Ranked Ladder (Top 10)</h2>
+          {ladderPreview.length === 0 ? (
+            <p className="mt-1 text-sm text-slate-500">No ranked entries yet.</p>
+          ) : (
+            <div className="mt-2 space-y-1 text-sm text-slate-300">
+              {ladderPreview.map((r, i) => (
+                <p key={r.agentId}>
+                  #{i + 1} {r.agentName} - {r.rating}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

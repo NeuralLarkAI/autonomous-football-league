@@ -7,6 +7,8 @@ const LEGACY_MAP: Record<string, string> = {
   "/": "/dashboard",
   "/agents": "/agents",
   "/tasks": "/tasks",
+  "/games": "/games",
+  "/standings": "/standings",
   "/approvals": "/approvals",
   "/ops": "/ops",
   "/feed": "/feed",
