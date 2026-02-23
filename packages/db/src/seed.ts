@@ -313,6 +313,56 @@ const SEASON_PHASES = [
 
 const RUNBOOKS = [
   {
+    name: "Season 0 Kickoff (Agents)",
+    description: "Comprehensive Season 0 orchestration across all department agents.",
+    ownerAgentId: "commissioner",
+    triggerType: "MANUAL",
+    cron: null,
+    actionType: "SEASON0_KICKOFF_AGENTS",
+    actionPayloadJson: "{}",
+    isEnabled: true,
+  },
+  {
+    name: "Weekly Commissioner Brief",
+    description: "Weekly commissioner briefing report.",
+    ownerAgentId: "commissioner",
+    triggerType: "MANUAL",
+    cron: null,
+    actionType: "GENERATE_REPORT",
+    actionPayloadJson: JSON.stringify({ targetAgentId: "commissioner", reportType: "WEEKLY" }),
+    isEnabled: true,
+  },
+  {
+    name: "Weekly Integrity Audit",
+    description: "Weekly integrity audit run.",
+    ownerAgentId: "integrity",
+    triggerType: "MANUAL",
+    cron: null,
+    actionType: "RUN_AGENT",
+    actionPayloadJson: JSON.stringify({ agentId: "integrity" }),
+    isEnabled: true,
+  },
+  {
+    name: "Weekly Combine",
+    description: "Weekly combine benchmark run.",
+    ownerAgentId: "rankings",
+    triggerType: "MANUAL",
+    cron: null,
+    actionType: "RUN_COMBINE",
+    actionPayloadJson: JSON.stringify({ agentId: "rankings", runType: "COMBINE", seed: 70 }),
+    isEnabled: true,
+  },
+  {
+    name: "Weekly Broadcast Recap",
+    description: "Weekly broadcast recap report.",
+    ownerAgentId: "broadcast-media",
+    triggerType: "MANUAL",
+    cron: null,
+    actionType: "GENERATE_REPORT",
+    actionPayloadJson: JSON.stringify({ targetAgentId: "broadcast-media", reportType: "WEEKLY_RECAP" }),
+    isEnabled: true,
+  },
+  {
     name: "Run Weekly Commissioner Report",
     description: "Generates the commissioner weekly report and posts a feed entry.",
     ownerAgentId: "chief-of-staff",
@@ -955,6 +1005,58 @@ async function main() {
     requiredSignoffs: ["commissioner", "integrity", "security"],
     creatorAgentId: "rules-committee",
   });
+
+  await ensureProposalWithApproval({
+    leagueId: DEFAULT_LEAGUE_ID,
+    title: "Weak Proposal: Unbounded Retry Policy",
+    summary: "Intentionally weak proposal to verify QA signoff CHANGES_REQUESTED flow.",
+    tier: 2,
+    changeType: "OPS",
+    affectedArea: "RELIABILITY",
+    beforeJson: JSON.stringify({ retryLimit: 3, backoff: "exp" }),
+    afterJson: JSON.stringify({ retryLimit: -1, backoff: "none" }),
+    risk: "Missing realistic risk analysis (intentional for QA workflow).",
+    testPlan: "TODO",
+    rollbackPlan: "TODO",
+    requiredSignoffs: ["commissioner", "integrity", "qa-engineer"],
+    creatorAgentId: "architect",
+  });
+
+  const weakProposal = await prisma.proposal.findFirst({
+    where: { leagueId: DEFAULT_LEAGUE_ID, title: "Weak Proposal: Unbounded Retry Policy" },
+  });
+  if (weakProposal) {
+    await prisma.signoff.upsert({
+      where: { proposalId_agentId: { proposalId: weakProposal.id, agentId: "qa-engineer" } },
+      update: {
+        status: "CHANGES_REQUESTED",
+        comment: "Insufficient test/rollback detail. Changes required.",
+      },
+      create: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        proposalId: weakProposal.id,
+        agentId: "qa-engineer",
+        status: "CHANGES_REQUESTED",
+        comment: "Insufficient test/rollback detail. Changes required.",
+      },
+    });
+  }
+
+  const spamPost = await prisma.post.findFirst({
+    where: { leagueId: DEFAULT_LEAGUE_ID, title: "SPAM: Leak exploit now" },
+  });
+  if (!spamPost) {
+    await prisma.post.create({
+      data: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        authorAgentId: null,
+        title: "SPAM: Leak exploit now",
+        bodyMarkdown: "leak exploit free tokens click now click now click now",
+        tags: "spam,flagged",
+        visibility: "PUBLIC",
+      },
+    });
+  }
 
   await prisma.eventLog.create({
     data: {

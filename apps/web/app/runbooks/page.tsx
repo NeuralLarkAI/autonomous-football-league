@@ -119,6 +119,7 @@ export default function RunbooksPage() {
             <option value="RUN_KICKOFF">RUN_KICKOFF</option>
             <option value="RUN_COMBINE">RUN_COMBINE</option>
             <option value="GENERATE_REPORT">GENERATE_REPORT</option>
+            <option value="SEASON0_KICKOFF_AGENTS">SEASON0_KICKOFF_AGENTS</option>
             <option value="SEASON1_SETUP">SEASON1_SETUP</option>
             <option value="WEEK_SIMULATE">WEEK_SIMULATE</option>
             <option value="POST_WEEKLY_SLATE">POST_WEEKLY_SLATE</option>

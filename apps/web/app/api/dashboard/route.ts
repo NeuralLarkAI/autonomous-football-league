@@ -5,7 +5,7 @@ import { getActiveLeague } from "@/lib/request-league";
 export async function GET() {
   try {
     const activeLeague = await getActiveLeague();
-    const [agentCount, taskCount, pendingApprovals, lastEvent, leagueState, activePhase, nextRunbooks, seasonOne] =
+    const [agentCount, taskCount, pendingApprovals, lastEvent, leagueState, activePhase, nextRunbooks, seasonOne, seasonZeroProgress] =
       await Promise.all([
         prisma.agent.count({ where: { leagueId: activeLeague.id, status: "ACTIVE" } }),
         prisma.task.count({ where: { leagueId: activeLeague.id, status: { in: ["BACKLOG", "IN_PROGRESS", "REVIEW", "BLOCKED"] } } }),
@@ -23,6 +23,14 @@ export async function GET() {
           where: { leagueId: activeLeague.id, seasonNumber: 1 },
           orderBy: { createdAt: "desc" },
         }),
+        Promise.all([
+          prisma.task.count({ where: { leagueId: activeLeague.id } }),
+          prisma.proposal.count({ where: { leagueId: activeLeague.id, status: "PENDING" } }),
+          prisma.approval.count({ where: { leagueId: activeLeague.id, status: "PENDING", tier: { gte: 2 } } }),
+          prisma.incident.count({ where: { leagueId: activeLeague.id, status: { not: "RESOLVED" } } }),
+          prisma.post.count({ where: { leagueId: activeLeague.id } }),
+          prisma.combineRun.count({ where: { leagueId: activeLeague.id } }),
+        ]),
       ]);
 
     const [teamCount, gameCount, weekOneFinal, weekOneTotal] = seasonOne
@@ -44,6 +52,14 @@ export async function GET() {
       phase: leagueState?.phase ?? "PRE_SEASON",
       activePhase,
       nextRunbooks,
+      seasonZero: {
+        tasksTotal: seasonZeroProgress[0],
+        proposalsPending: seasonZeroProgress[1],
+        approvalsPendingTier23: seasonZeroProgress[2],
+        incidentsOpen: seasonZeroProgress[3],
+        postsCount: seasonZeroProgress[4],
+        combineRunsCount: seasonZeroProgress[5],
+      },
       seasonOne: seasonOne
         ? {
             id: seasonOne.id,

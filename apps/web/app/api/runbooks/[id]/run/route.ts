@@ -4,6 +4,7 @@ import { runAgent, runKickoff, runCombine, stepGame } from "@afl/agents";
 import { getActiveLeague } from "@/lib/request-league";
 import { ensureSeasonOne } from "@/lib/season1";
 import { refreshGameBoxScore, refreshStandingsForFinal } from "@/lib/game-stats";
+import { runSeasonZeroKickoffAgents } from "@/lib/season0-kickoff-agents";
 
 function parsePayload(input: string): Record<string, unknown> {
   try {
@@ -404,6 +405,9 @@ export async function POST(
         ownerAgentId: runbook.ownerAgentId,
       });
       outputSummary = `Season 1 setup complete: ${result.teams} teams, ${result.games} games, ${result.weekOneGames} Week 1 matchups.`;
+    } else if (runbook.actionType === "SEASON0_KICKOFF_AGENTS") {
+      const result = await runSeasonZeroKickoffAgents(activeLeague.id);
+      outputSummary = `Season 0 kickoff agents complete: tasks=${result.tasksTotal}, proposals=${result.proposalsTotal}, incidents=${result.incidentsTotal}, posts=${result.socialPostsTotal}, combines=${result.combineRunsTotal}.`;
     } else if (runbook.actionType === "WEEK_SIMULATE" || runbook.actionType === "RUN_WEEK") {
       const weekNumber = Math.max(1, Number(payload.weekNumber ?? payload.week ?? 1));
       const mode = String(payload.mode ?? "RUN_TO_FINAL") === "STEP" ? "STEP" : "RUN_TO_FINAL";

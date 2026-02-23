@@ -156,6 +156,7 @@ export const CreateRunbookSchema = z.object({
     "RUN_KICKOFF",
     "RUN_COMBINE",
     "GENERATE_REPORT",
+    "SEASON0_KICKOFF_AGENTS",
     "SEASON1_SETUP",
     "WEEK_SIMULATE",
     "POST_WEEKLY_SLATE",

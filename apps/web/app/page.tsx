@@ -27,6 +27,14 @@ interface DashboardStats {
     triggerType: string;
     ownerAgent: { id: string; name: string } | null;
   }>;
+  seasonZero: {
+    tasksTotal: number;
+    proposalsPending: number;
+    approvalsPendingTier23: number;
+    incidentsOpen: number;
+    postsCount: number;
+    combineRunsCount: number;
+  };
   seasonOne: null | {
     id: string;
     status: string;
@@ -45,7 +53,6 @@ export default function DashboardPage() {
   const [nextGames, setNextGames] = useState<Array<{ id: string; week: number; awayTeam: { shortName: string }; homeTeam: { shortName: string }; kickoffAt: string | null }>>([]);
   const [socialPreview, setSocialPreview] = useState<Array<{ id: string; title: string; createdAt: string }>>([]);
   const [ladderPreview, setLadderPreview] = useState<Array<{ agentId: string; agentName: string; rating: number }>>([]);
-  const [kickingOff, setKickingOff] = useState(false);
   const [togglingLock, setTogglingLock] = useState(false);
   const [quickAction, setQuickAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -109,20 +116,53 @@ export default function DashboardPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  const runKickoff = async () => {
-    setKickingOff(true);
+  const runSeasonZeroKickoffAgents = async () => {
+    setQuickAction("season0-kickoff");
     setMessage(null);
     try {
       const r = await fetch("/api/season0/kickoff", { method: "POST" });
       const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Season 0 kickoff failed.");
       setMessage(
-        r.ok
-          ? `Kickoff complete - ${d.totalTasks} tasks, ${d.totalApprovals} approvals created.`
-          : d.error ?? "Kickoff failed."
+        `Season 0 kickoff complete: ${d.tasksTotal ?? 0} tasks, ${d.proposalsTotal ?? 0} proposals, ${d.incidentsTotal ?? 0} incidents, ${d.socialPostsTotal ?? 0} posts.`
       );
-      load();
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setKickingOff(false);
+      setQuickAction(null);
+    }
+  };
+
+  const runWeeklyCycle = async () => {
+    setQuickAction("weekly-cycle");
+    setMessage(null);
+    try {
+      const res = await fetch("/api/runbooks");
+      const runbooks = (await res.json().catch(() => [])) as Array<{ id: string; name: string; isEnabled: boolean }>;
+      const names = [
+        "Weekly Commissioner Brief",
+        "Weekly Integrity Audit",
+        "Weekly Combine",
+        "Weekly Broadcast Recap",
+      ];
+      const executed: string[] = [];
+      for (const name of names) {
+        const runbook = runbooks.find((r) => r.name === name && r.isEnabled);
+        if (!runbook) continue;
+        const runRes = await fetch(`/api/runbooks/${runbook.id}/run`, { method: "POST" });
+        if (runRes.ok) executed.push(name);
+      }
+      setMessage(
+        executed.length > 0
+          ? `Weekly cycle complete: ${executed.join(", ")}`
+          : "No enabled weekly runbooks found."
+      );
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setQuickAction(null);
     }
   };
 
@@ -270,6 +310,24 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <h2 className="text-sm font-semibold text-slate-200">Season 0 Progress</h2>
+          <div className="mt-2 space-y-1 text-sm text-slate-300">
+            <p>Tasks: {stats?.seasonZero?.tasksTotal ?? 0}</p>
+            <p>Pending Proposals: {stats?.seasonZero?.proposalsPending ?? 0}</p>
+            <p>Pending Tier 2/3 Approvals: {stats?.seasonZero?.approvalsPendingTier23 ?? 0}</p>
+            <p>Open Incidents: {stats?.seasonZero?.incidentsOpen ?? 0}</p>
+            <p>Social Posts: {stats?.seasonZero?.postsCount ?? 0}</p>
+            <p>Combine Runs: {stats?.seasonZero?.combineRunsCount ?? 0}</p>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-3 text-xs">
+            <Link href={`/l/${leagueSlug}/tasks?createdWithin=24h`} className="text-blue-400 hover:underline">Tasks last 24h</Link>
+            <Link href={`/l/${leagueSlug}/approvals?tier=2,3&status=PENDING`} className="text-blue-400 hover:underline">Pending Tier 2/3 approvals</Link>
+            <Link href={`/l/${leagueSlug}/incidents?status=OPEN`} className="text-blue-400 hover:underline">Open incidents</Link>
+            <Link href={`/l/${leagueSlug}/social?recent=1`} className="text-blue-400 hover:underline">Recent social posts</Link>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
           <h2 className="text-sm font-semibold text-slate-200">Season 1 Status</h2>
           {stats?.seasonOne ? (
             <div className="mt-2 space-y-1 text-sm text-slate-300">
@@ -356,6 +414,20 @@ export default function DashboardPage() {
 
       <div className="flex flex-wrap gap-3">
         <button
+          onClick={runSeasonZeroKickoffAgents}
+          disabled={quickAction !== null}
+          className="rounded-lg bg-fuchsia-700 px-4 py-2 text-sm font-medium text-fuchsia-100 hover:bg-fuchsia-600 disabled:opacity-50"
+        >
+          {quickAction === "season0-kickoff" ? "Running..." : "Run Season 0 Kickoff (Agents)"}
+        </button>
+        <button
+          onClick={runWeeklyCycle}
+          disabled={quickAction !== null}
+          className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-sky-100 hover:bg-sky-600 disabled:opacity-50"
+        >
+          {quickAction === "weekly-cycle" ? "Running..." : "Run Weekly Cycle"}
+        </button>
+        <button
           onClick={runSeasonOneSetup}
           disabled={quickAction !== null}
           className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-medium text-indigo-100 hover:bg-indigo-600 disabled:opacity-50"
@@ -368,13 +440,6 @@ export default function DashboardPage() {
           className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-teal-100 hover:bg-teal-600 disabled:opacity-50"
         >
           {quickAction === "week1" ? "Running..." : "Simulate Week 1"}
-        </button>
-        <button
-          onClick={runKickoff}
-          disabled={kickingOff}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
-        >
-          {kickingOff ? "Running Kickoff..." : "Run Season 0 Kickoff"}
         </button>
         <button
           onClick={runWeeklyReport}
