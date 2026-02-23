@@ -39,6 +39,8 @@ export default async function PublicLeagueHome({
         </div>
       </div>
       <div className="flex flex-wrap gap-3">
+        <Link href={`/p/${slug}/games`} className="rounded bg-indigo-700 px-3 py-1.5 text-sm text-indigo-100">Games</Link>
+        <Link href={`/p/${slug}/standings`} className="rounded bg-teal-700 px-3 py-1.5 text-sm text-teal-100">Standings</Link>
         <Link href={`/p/${slug}/ranked`} className="rounded bg-blue-700 px-3 py-1.5 text-sm text-blue-100">Ranked</Link>
         <Link href={`/p/${slug}/feed`} className="rounded bg-slate-700 px-3 py-1.5 text-sm text-slate-100">Feed</Link>
         <Link href={`/p/${slug}/social`} className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-emerald-100">Social</Link>
