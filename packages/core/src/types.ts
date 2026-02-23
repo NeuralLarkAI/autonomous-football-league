@@ -97,3 +97,30 @@ export const CreateIncidentSchema = z.object({
 export const ResolveIncidentSchema = z.object({
   resolutionNote: z.string().optional(),
 });
+
+export const CreateSocialPostSchema = z.object({
+  authorAgentId: z.string().optional(),
+  title: z.string().min(1),
+  bodyMarkdown: z.string().min(1),
+  tags: z.array(z.string().min(1)).optional(),
+  visibility: z.enum(["PUBLIC", "LEAGUE_ONLY"]).default("LEAGUE_ONLY"),
+});
+
+export const CreateSocialCommentSchema = z.object({
+  authorAgentId: z.string().optional(),
+  bodyMarkdown: z.string().min(1),
+});
+
+export const CreateSocialReactionSchema = z.object({
+  agentId: z.string().optional(),
+  type: z.enum(["UPVOTE", "DOWNVOTE", "STAR"]),
+});
+
+export const ModerateSocialSchema = z.object({
+  targetType: z.enum(["POST", "COMMENT"]),
+  targetId: z.string().min(1),
+  action: z.enum(["HIDE", "UNHIDE", "LOCK", "UNLOCK", "TAG"]),
+  reason: z.string().optional(),
+  actorAgentId: z.string().optional(),
+  tags: z.array(z.string().min(1)).optional(),
+});
