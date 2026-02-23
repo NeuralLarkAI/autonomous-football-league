@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
+const DEFAULT_LEAGUE_ID = "league_afl_prime";
+const DEFAULT_USER_ID = "user_commissioner_dev";
 
 type SeedAgent = {
   id: string;
@@ -341,6 +343,7 @@ const RUNBOOKS = [
 ] as const;
 
 async function ensureProposalWithApproval(input: {
+  leagueId: string;
   title: string;
   summary: string;
   tier: number;
@@ -360,6 +363,7 @@ async function ensureProposalWithApproval(input: {
   if (!proposal) {
     proposal = await prisma.proposal.create({
       data: {
+        leagueId: input.leagueId,
         title: input.title,
         summary: input.summary,
         tier: input.tier,
@@ -385,6 +389,7 @@ async function ensureProposalWithApproval(input: {
   if (!existingApproval) {
     await prisma.approval.create({
       data: {
+        leagueId: input.leagueId,
         proposalId: proposal.id,
         agentId: input.creatorAgentId,
         tier: input.tier,
@@ -400,6 +405,7 @@ async function ensureProposalWithApproval(input: {
       where: { proposalId_agentId: { proposalId: proposal.id, agentId } },
       update: {},
       create: {
+        leagueId: input.leagueId,
         proposalId: proposal.id,
         agentId,
         status: "REQUESTED",
@@ -411,6 +417,7 @@ async function ensureProposalWithApproval(input: {
   if (created) {
     await prisma.eventLog.create({
       data: {
+        leagueId: input.leagueId,
         agentId: input.creatorAgentId,
         type: "PROPOSAL_CREATED",
         tier: input.tier,
@@ -424,6 +431,7 @@ async function ensureProposalWithApproval(input: {
 
     await prisma.eventLog.create({
       data: {
+        leagueId: input.leagueId,
         agentId: input.creatorAgentId,
         type: "APPROVAL_CREATED",
         tier: input.tier,
@@ -438,6 +446,7 @@ async function ensureProposalWithApproval(input: {
     for (const agentId of input.requiredSignoffs) {
       await prisma.eventLog.create({
         data: {
+          leagueId: input.leagueId,
           agentId,
           type: "SIGNOFF_REQUESTED",
           tier: input.tier,
@@ -453,12 +462,50 @@ async function ensureProposalWithApproval(input: {
 }
 
 async function main() {
-  console.log("Seeding AFL Season 0 v3...");
+  console.log("Seeding AFL Season 0 v4...");
+
+  await prisma.user.upsert({
+    where: { email: "commissioner@afl.local" },
+    update: { displayName: "Commissioner Dev", passwordHash: "dev-only-change-me" },
+    create: {
+      id: DEFAULT_USER_ID,
+      email: "commissioner@afl.local",
+      displayName: "Commissioner Dev",
+      passwordHash: "dev-only-change-me",
+    },
+  });
+
+  await prisma.league.upsert({
+    where: { slug: "afl-prime" },
+    update: { name: "AFL Prime", ownerUserId: DEFAULT_USER_ID },
+    create: {
+      id: DEFAULT_LEAGUE_ID,
+      name: "AFL Prime",
+      slug: "afl-prime",
+      ownerUserId: DEFAULT_USER_ID,
+    },
+  });
+
+  await prisma.leagueMember.upsert({
+    where: {
+      leagueId_userId: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        userId: DEFAULT_USER_ID,
+      },
+    },
+    update: { role: "OWNER" },
+    create: {
+      leagueId: DEFAULT_LEAGUE_ID,
+      userId: DEFAULT_USER_ID,
+      role: "OWNER",
+    },
+  });
 
   for (const a of AGENTS) {
     await prisma.agent.upsert({
       where: { id: a.id },
       update: {
+        leagueId: DEFAULT_LEAGUE_ID,
         name: a.name,
         department: a.department,
         role: a.role,
@@ -470,6 +517,7 @@ async function main() {
       },
       create: {
         id: a.id,
+        leagueId: DEFAULT_LEAGUE_ID,
         name: a.name,
         department: a.department,
         role: a.role,
@@ -485,9 +533,10 @@ async function main() {
 
   await prisma.leagueState.upsert({
     where: { id: "singleton" },
-    update: {},
+    update: { leagueId: DEFAULT_LEAGUE_ID },
     create: {
       id: "singleton",
+      leagueId: DEFAULT_LEAGUE_ID,
       season: 0,
       seasonLock: false,
       phase: "PRE_SEASON",
@@ -499,12 +548,14 @@ async function main() {
     await prisma.seasonPhase.upsert({
       where: { seasonNumber_name: { seasonNumber: 0, name: phase.name } },
       update: {
+        leagueId: DEFAULT_LEAGUE_ID,
         description: phase.description,
         startDate: new Date(phase.startDate),
         endDate: new Date(phase.endDate),
         status: phase.status,
       },
       create: {
+        leagueId: DEFAULT_LEAGUE_ID,
         seasonNumber: 0,
         name: phase.name,
         description: phase.description,
@@ -520,6 +571,7 @@ async function main() {
     await prisma.runbook.upsert({
       where: { name: runbook.name },
       update: {
+        leagueId: DEFAULT_LEAGUE_ID,
         description: runbook.description,
         ownerAgentId: runbook.ownerAgentId,
         triggerType: runbook.triggerType,
@@ -529,6 +581,7 @@ async function main() {
         isEnabled: runbook.isEnabled,
       },
       create: {
+        leagueId: DEFAULT_LEAGUE_ID,
         name: runbook.name,
         description: runbook.description,
         ownerAgentId: runbook.ownerAgentId,
@@ -542,7 +595,33 @@ async function main() {
   }
   console.log(`Upserted ${RUNBOOKS.length} runbooks.`);
 
+  await prisma.agentRegistration.upsert({
+    where: { claimCode: "AFL-DEMO-CLAIM" },
+    update: {
+      leagueId: DEFAULT_LEAGUE_ID,
+      agentName: "Demo External Agent",
+      description: "Seeded pending registration for connect flow smoke testing.",
+      requestedScopes: JSON.stringify(["social:write", "combine:run", "feed:read"]),
+      mode: "EXTERNAL",
+      status: "PENDING",
+      registrationToken: "seed_demo_registration_token",
+      expiresAt: new Date("2026-12-31T23:59:59.000Z"),
+    },
+    create: {
+      leagueId: DEFAULT_LEAGUE_ID,
+      agentName: "Demo External Agent",
+      description: "Seeded pending registration for connect flow smoke testing.",
+      requestedScopes: JSON.stringify(["social:write", "combine:run", "feed:read"]),
+      mode: "EXTERNAL",
+      status: "PENDING",
+      registrationToken: "seed_demo_registration_token",
+      claimCode: "AFL-DEMO-CLAIM",
+      expiresAt: new Date("2026-12-31T23:59:59.000Z"),
+    },
+  });
+
   await ensureProposalWithApproval({
+    leagueId: DEFAULT_LEAGUE_ID,
     title: "Anti-Tampering Escalation Policy v2",
     summary: "Tier 2 policy update requiring Commissioner and Integrity signoff.",
     tier: 2,
@@ -558,6 +637,7 @@ async function main() {
   });
 
   await ensureProposalWithApproval({
+    leagueId: DEFAULT_LEAGUE_ID,
     title: "Scoring Engine Weight Matrix v2",
     summary: "Tier 3 scoring change requiring Commissioner, Integrity, and Security signoff.",
     tier: 3,
@@ -574,12 +654,15 @@ async function main() {
 
   await prisma.eventLog.create({
     data: {
+      leagueId: DEFAULT_LEAGUE_ID,
       type: "SEED",
-      summary: "Season 0 v3 seed complete. Agents, governance records, phases, and runbooks ready.",
+      summary: "Season 0 v4 seed complete. League, users, agents, governance records, phases, and runbooks ready.",
       meta: JSON.stringify({
         agentCount: AGENTS.length,
         phaseCount: SEASON_PHASES.length,
         runbookCount: RUNBOOKS.length,
+        defaultLeagueId: DEFAULT_LEAGUE_ID,
+        defaultUserId: DEFAULT_USER_ID,
       }),
     },
   });

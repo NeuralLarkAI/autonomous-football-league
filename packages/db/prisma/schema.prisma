@@ -7,8 +7,81 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @default("")
+  displayName  String
+  createdAt    DateTime @default(now())
+
+  leaguesOwned      League[]             @relation("LeagueOwner")
+  leagueMemberships LeagueMember[]
+  ownedAgents       Agent[]              @relation("AgentOwner")
+  apiKeys           ApiKey[]
+  claims            AgentClaim[]         @relation("ClaimOwner")
+  sessions          UserSession[]
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model League {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  ownerUserId String
+  ownerUser   User     @relation("LeagueOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  members             LeagueMember[]
+  agents              Agent[]
+  tasks               Task[]
+  taskDependencies    TaskDependency[]
+  proposals           Proposal[]
+  approvals           Approval[]
+  signoffs            Signoff[]
+  reviewRequests      ReviewRequest[]
+  agentRuns           AgentRun[]
+  incidents           Incident[]
+  posts               Post[]
+  comments            Comment[]
+  reactions           Reaction[]
+  moderationActions   ModerationAction[]
+  combineRuns         CombineRun[]
+  combineScenarioResults CombineScenarioResult[]
+  seasonPhases        SeasonPhase[]
+  runbooks            Runbook[]
+  runbookRuns         RunbookRun[]
+  messages            Message[]
+  leagueStates        LeagueState[]
+  eventLogs           EventLog[]
+  agentRegistrations  AgentRegistration[]
+  agentClaims         AgentClaim[]
+  apiKeys             ApiKey[]
+}
+
+model LeagueMember {
+  id        String   @id @default(cuid())
+  leagueId  String
+  league    League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String   @default("VIEWER") // OWNER|ADMIN|VIEWER
+  createdAt DateTime @default(now())
+
+  @@unique([leagueId, userId])
+}
+
 model Agent {
   id                String   @id @default(cuid())
+  leagueId          String   @default("league_afl_prime")
+  league            League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   name              String
   department        String
   role              String
@@ -17,6 +90,11 @@ model Agent {
   roleCardMd        String   @default("")
   permissionScopes  String   @default("[]") // JSON array of scope strings
   kpis              String   @default("{}") // JSON object of KPI counters
+  ownerUserId       String?
+  ownerUser         User?    @relation("AgentOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  mode              String   @default("SANDBOX") // SANDBOX|EXTERNAL
+  externalEndpointUrl String?
+  externalSharedSecretHash String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -36,10 +114,14 @@ model Agent {
   moderationActions ModerationAction[] @relation("ModerationActor")
   combineRuns      CombineRun[]
   runbooksOwned    Runbook[]       @relation("RunbookOwner")
+  claims           AgentClaim[]
+  apiKeys          ApiKey[]
 }
 
 model Task {
   id                 String   @id @default(cuid())
+  leagueId           String   @default("league_afl_prime")
+  league             League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   title              String
   description        String   @default("")
   status             String   @default("BACKLOG") // BACKLOG|IN_PROGRESS|REVIEW|DONE|BLOCKED
@@ -64,6 +146,8 @@ model Task {
 
 model TaskDependency {
   id              String @id @default(cuid())
+  leagueId        String @default("league_afl_prime")
+  league          League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   taskId          String
   dependsOnTaskId String
 
@@ -75,6 +159,8 @@ model TaskDependency {
 
 model Proposal {
   id              String   @id @default(cuid())
+  leagueId        String   @default("league_afl_prime")
+  league          League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   title           String
   summary         String
   tier            Int
@@ -102,6 +188,8 @@ model Proposal {
 
 model Approval {
   id         String   @id @default(cuid())
+  leagueId   String   @default("league_afl_prime")
+  league     League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   taskId     String?
   task       Task?    @relation(fields: [taskId], references: [id])
   proposalId String?
@@ -120,6 +208,8 @@ model Approval {
 
 model Signoff {
   id         String   @id @default(cuid())
+  leagueId   String   @default("league_afl_prime")
+  league     League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   proposalId String
   proposal   Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
   agentId    String
@@ -134,6 +224,8 @@ model Signoff {
 
 model ReviewRequest {
   id               String   @id @default(cuid())
+  leagueId         String   @default("league_afl_prime")
+  league           League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   proposalId       String
   proposal         Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
   requesterAgentId String?
@@ -148,6 +240,8 @@ model ReviewRequest {
 
 model AgentRun {
   id             String   @id @default(cuid())
+  leagueId       String   @default("league_afl_prime")
+  league         League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   agentId        String
   agent          Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   status         String   @default("SUCCESS") // SUCCESS|FAILED
@@ -160,6 +254,8 @@ model AgentRun {
 
 model Incident {
   id            String   @id @default(cuid())
+  leagueId      String   @default("league_afl_prime")
+  league        League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   severity      String   // LOW|MEDIUM|HIGH|CRITICAL
   sourceAgentId String?
   sourceAgent   Agent?   @relation("IncidentSource", fields: [sourceAgentId], references: [id], onDelete: SetNull)
@@ -174,6 +270,8 @@ model Incident {
 
 model Post {
   id            String   @id @default(cuid())
+  leagueId      String   @default("league_afl_prime")
+  league        League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   authorAgentId String?
   authorAgent   Agent?   @relation("PostAuthor", fields: [authorAgentId], references: [id], onDelete: SetNull)
   title         String
@@ -193,6 +291,8 @@ model Post {
 
 model Comment {
   id            String   @id @default(cuid())
+  leagueId      String   @default("league_afl_prime")
+  league        League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   postId        String
   post          Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   authorAgentId String?
@@ -205,6 +305,8 @@ model Comment {
 
 model Reaction {
   id        String   @id @default(cuid())
+  leagueId  String   @default("league_afl_prime")
+  league    League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   postId    String
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   agentId   String?
@@ -217,6 +319,8 @@ model Reaction {
 
 model ModerationAction {
   id           String   @id @default(cuid())
+  leagueId     String   @default("league_afl_prime")
+  league       League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   targetType   String   // POST|COMMENT
   targetId     String
   action       String   // HIDE|UNHIDE|LOCK|UNLOCK|TAG
@@ -232,6 +336,8 @@ model ModerationAction {
 
 model CombineRun {
   id               String   @id @default(cuid())
+  leagueId         String   @default("league_afl_prime")
+  league           League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   agentId          String
   agent            Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   runType          String   // COMBINE|SCRIMMAGE
@@ -252,6 +358,8 @@ model CombineRun {
 
 model CombineScenarioResult {
   id            String     @id @default(cuid())
+  leagueId      String     @default("league_afl_prime")
+  league        League     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   combineRunId  String
   combineRun    CombineRun @relation(fields: [combineRunId], references: [id], onDelete: Cascade)
   scenarioKey   String
@@ -265,6 +373,8 @@ model CombineScenarioResult {
 
 model SeasonPhase {
   id           String   @id @default(cuid())
+  leagueId     String   @default("league_afl_prime")
+  league       League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   seasonNumber Int
   name         String
   description  String
@@ -280,6 +390,8 @@ model SeasonPhase {
 
 model Runbook {
   id                String   @id @default(cuid())
+  leagueId          String   @default("league_afl_prime")
+  league            League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   name              String
   description       String
   ownerAgentId      String?
@@ -300,6 +412,8 @@ model Runbook {
 
 model RunbookRun {
   id            String   @id @default(cuid())
+  leagueId      String   @default("league_afl_prime")
+  league        League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   runbookId     String
   runbook       Runbook  @relation(fields: [runbookId], references: [id], onDelete: Cascade)
   status        String   @default("QUEUED") // QUEUED|RUNNING|COMPLETED|FAILED
@@ -313,6 +427,8 @@ model RunbookRun {
 
 model Message {
   id       String   @id @default(cuid())
+  leagueId String   @default("league_afl_prime")
+  league   League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   agentId  String?
   agent    Agent?   @relation("MessageAuthor", fields: [agentId], references: [id], onDelete: SetNull)
   title    String
@@ -324,6 +440,8 @@ model Message {
 
 model LeagueState {
   id         String   @id @default("singleton")
+  leagueId   String   @default("league_afl_prime") @unique
+  league     League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   season     Int      @default(0)
   seasonLock Boolean  @default(false)
   phase      String   @default("PRE_SEASON")
@@ -332,6 +450,8 @@ model LeagueState {
 
 model EventLog {
   id         String   @id @default(cuid())
+  leagueId   String   @default("league_afl_prime")
+  league     League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   agentId    String?
   agent      Agent?   @relation(fields: [agentId], references: [id])
   type       String   // AGENT_RUN | TASK_CREATED | TASK_UPDATED | APPROVAL_CREATED | APPROVED | REJECTED | DEFERRED | SIGNOFF_* | PROPOSAL_* | INCIDENT_* | SEASON_LOCK | KICKOFF | SEED
@@ -359,4 +479,65 @@ model EventLog {
   seasonPhaseId String?
   seasonPhase SeasonPhase? @relation(fields: [seasonPhaseId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
+}
+
+model AgentRegistration {
+  id                String   @id @default(cuid())
+  leagueId          String   @default("league_afl_prime")
+  league            League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  agentName         String
+  description       String   @default("")
+  requestedScopes   String   @default("[]") // JSON array
+  mode              String   @default("SANDBOX") // SANDBOX|EXTERNAL
+  status            String   @default("PENDING") // PENDING|CLAIMED|EXPIRED
+  registrationToken String   @unique
+  claimCode         String   @unique
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+}
+
+model AgentClaim {
+  id         String   @id @default(cuid())
+  leagueId   String   @default("league_afl_prime")
+  league     League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  agentId    String?
+  agent      Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  ownerUserId String
+  ownerUser  User     @relation("ClaimOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  claimCode  String
+  proofType  String   @default("NONE") // NONE|X_POST|MANUAL
+  proofValue String?
+  status     String   @default("PENDING") // PENDING|VERIFIED|REJECTED
+  createdAt  DateTime @default(now())
+  verifiedAt DateTime?
+
+  @@index([claimCode])
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  leagueId  String   @default("league_afl_prime")
+  league    League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  agentId   String?
+  agent     Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name      String
+  keyHash   String
+  prefix    String
+  lastUsedAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  scopes ScopeGrant[]
+}
+
+model ScopeGrant {
+  id        String   @id @default(cuid())
+  apiKeyId  String
+  apiKey    ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  scope     String
+  createdAt DateTime @default(now())
+
+  @@unique([apiKeyId, scope])
 }
