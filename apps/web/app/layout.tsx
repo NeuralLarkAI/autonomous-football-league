@@ -12,7 +12,9 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  ensureAutoRunWorkerStarted();
+  if (process.env.ENABLE_EMBEDDED_AUTORUN_WORKER === "true") {
+    ensureAutoRunWorkerStarted();
+  }
   return (
     <html lang="en">
       <body className="min-h-screen bg-[#0a0f1e] text-slate-200">{children}</body>

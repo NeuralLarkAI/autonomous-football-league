@@ -16,6 +16,8 @@
   "scripts": {
     "dev": "corepack pnpm --filter @afl/web dev",
     "build": "corepack pnpm --filter @afl/web build",
+    "start:web": "node scripts/start-web.cjs",
+    "start:worker": "corepack pnpm exec tsx scripts/worker.ts",
     "lint": "corepack pnpm --filter @afl/web lint",
     "db:generate": "corepack pnpm --filter @afl/db prisma:generate",
     "db:migrate": "corepack pnpm --filter @afl/db prisma:migrate",
@@ -27,6 +29,7 @@
     "_seed": "cd packages/db && corepack pnpm seed"
   },
   "devDependencies": {
+    "tsx": "^4.20.5",
     "typescript": "^5.7.3"
   }
 }
