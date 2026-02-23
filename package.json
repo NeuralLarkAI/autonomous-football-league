@@ -19,6 +19,7 @@
     "lint": "corepack pnpm --filter @afl/web lint",
     "db:generate": "corepack pnpm --filter @afl/db prisma:generate",
     "db:migrate": "corepack pnpm --filter @afl/db prisma:migrate",
+    "db:seed": "corepack pnpm --filter @afl/db seed",
     "db:studio": "corepack pnpm --filter @afl/db prisma:studio",
     "seed": "corepack pnpm --filter @afl/db seed",
     "_dev": "cd apps/web && corepack pnpm dev",
