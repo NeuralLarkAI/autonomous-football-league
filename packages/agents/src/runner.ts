@@ -2,6 +2,7 @@ import { prisma } from "@afl/db";
 import { TASK_TEMPLATES } from "./tasks";
 import { SEASON0_AGENT_DELIVERABLES } from "./season0-deliverables";
 import type { AgentRunObservedCounts, AgentRunOutputRefs, AgentRunResult } from "./types";
+import { generateAgentNarrative, hasClaudeAgentBrain } from "./ai";
 
 type SeasonOneChecklistItem = {
   key: string;
@@ -371,11 +372,65 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
     }
 
     if (season) {
+      const [openTasks, pendingApprovals, openIncidents, pendingRunbooks] = await Promise.all([
+        prisma.task.count({
+          where: { leagueId, status: { in: ["BACKLOG", "IN_PROGRESS", "REVIEW", "BLOCKED"] } },
+        }),
+        prisma.approval.count({ where: { leagueId, status: "PENDING" } }),
+        prisma.incident.count({ where: { leagueId, status: { not: "RESOLVED" } } }),
+        prisma.runbook.count({ where: { leagueId, triggerType: "SCHEDULED", isEnabled: true } }),
+      ]);
+      const aiNarrative = await generateAgentNarrative({
+        agentName: "Commissioner",
+        goal: "Publish an operational notice for league readiness and next actions.",
+        context: [
+          `Season: ${season.seasonNumber}`,
+          `Open tasks: ${openTasks}`,
+          `Pending approvals: ${pendingApprovals}`,
+          `Open incidents: ${openIncidents}`,
+          `Enabled scheduled runbooks: ${pendingRunbooks}`,
+          "Keep this commissioner note practical and execution focused.",
+        ].join("\n"),
+      });
+
+      if (aiNarrative) {
+        await prisma.eventLog.create({
+          data: {
+            leagueId,
+            agentId,
+            type: "AGENT_AI_THOUGHT",
+            summary: "Commissioner generated AI-assisted operations narrative.",
+            entityType: "AGENT",
+            entityId: agentId,
+            meta: JSON.stringify({
+              provider: "anthropic",
+              mode: "commissioner_notice",
+              seasonNumber: season.seasonNumber,
+            }),
+          },
+        });
+        eventsCreated += 1;
+      } else if (hasClaudeAgentBrain()) {
+        await prisma.eventLog.create({
+          data: {
+            leagueId,
+            agentId,
+            type: "AGENT_AI_FALLBACK",
+            summary: "Commissioner AI call failed; used deterministic fallback notice.",
+            entityType: "AGENT",
+            entityId: agentId,
+            meta: JSON.stringify({ provider: "anthropic", mode: "commissioner_notice" }),
+          },
+        });
+        eventsCreated += 1;
+      }
+
       await emitSocialPost({
         leagueId,
         agentId,
         title: `Commissioner Notice - Season ${season.seasonNumber} Operations`,
         bodyMarkdown:
+          aiNarrative ??
           "Season 1 operations are active. Use runbooks for setup validation and weekly simulations to preserve deterministic replayability.",
         tags: ["commissioner", "season1", "operations"],
         visibility: "PUBLIC",

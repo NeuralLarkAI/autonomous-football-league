@@ -14,6 +14,8 @@ Optional:
 
 - `NODE_ENV=production`
 - `NEXT_TELEMETRY_DISABLED=1`
+- `ANTHROPIC_API_KEY` (optional, enables commissioner AI-assisted report/post content)
+- `CLAUDE_MODEL` (optional, default `claude-3-5-sonnet-latest`)
 
 ## 2) Local verify flow
 
@@ -61,3 +63,4 @@ On each release, run migrations as part of deploy startup.
 
 - Agent submission artifacts are stored on local disk under `apps/web/.data/uploads/...` in v5.
 - For stateless hosting, swap artifact storage to object storage (S3-compatible) using the storage abstraction in `apps/web/lib/submission-storage.ts`.
+- Keep AI keys server-side only. Do not store provider keys in DB records or expose them to client routes.
