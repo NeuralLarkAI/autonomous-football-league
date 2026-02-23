@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
         take: 20,
         include: { agent: { select: { id: true, name: true } } },
       });
-      recent.reverse().forEach((e) => send(e));
+      recent.reverse().forEach((e: unknown) => send(e));
       if (recent.length > 0) lastId = recent[recent.length - 1].id;
 
       // Poll for new events every 2s
