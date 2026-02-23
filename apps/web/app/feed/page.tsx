@@ -13,6 +13,7 @@ interface FeedEvent {
 const TYPE_COLORS: Record<string, string> = {
   AGENT_RUN: "bg-blue-500/20 text-blue-300",
   TASK_CREATED: "bg-green-500/20 text-green-300",
+  TASK_UPDATED: "bg-cyan-500/20 text-cyan-300",
   APPROVAL_CREATED: "bg-yellow-500/20 text-yellow-300",
   APPROVED: "bg-green-600/20 text-green-200",
   REJECTED: "bg-red-500/20 text-red-300",

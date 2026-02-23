@@ -21,8 +21,8 @@ export async function PATCH(
 
     await prisma.eventLog.create({
       data: {
-        type: "TASK_CREATED",
-        summary: `Task "${task.title}" status updated to ${task.status}`,
+        type: "TASK_UPDATED",
+        summary: `Task "${task.title}" updated to ${task.status}`,
         meta: JSON.stringify({ taskId: id, ...parsed.data }),
       },
     });

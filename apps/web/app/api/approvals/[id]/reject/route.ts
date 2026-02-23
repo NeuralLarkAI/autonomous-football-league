@@ -12,6 +12,12 @@ export async function POST(
     const parsed = RejectSchema.safeParse(body);
     const reason = parsed.success ? (parsed.data.reason ?? "No reason given") : "No reason given";
 
+    const existing = await prisma.approval.findUnique({ where: { id } });
+    if (!existing) return NextResponse.json({ error: "Approval not found" }, { status: 404 });
+    if (existing.status !== "PENDING") {
+      return NextResponse.json({ error: "Approval is not pending" }, { status: 409 });
+    }
+
     const approval = await prisma.approval.update({
       where: { id },
       data: { status: "REJECTED" },
@@ -22,7 +28,7 @@ export async function POST(
       data: {
         agentId: approval.agentId,
         type: "REJECTED",
-        summary: `Approval #${id.slice(-6)} REJECTED — ${approval.summary}. Reason: ${reason}`,
+        summary: `Approval #${id.slice(-6)} REJECTED - ${approval.summary}. Reason: ${reason}`,
         meta: JSON.stringify({ approvalId: id, tier: approval.tier, reason }),
       },
     });
