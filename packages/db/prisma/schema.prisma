@@ -7,6 +7,43 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum TeamOffenseScheme {
+  WEST_COAST
+  SPREAD
+  POWER
+  VERTICAL
+}
+
+enum TeamDefenseScheme {
+  MAN
+  ZONE
+  BLITZ
+  SHELL
+}
+
+enum SeasonStatus {
+  PLANNED
+  ACTIVE
+  DONE
+}
+
+enum GameStatus {
+  SCHEDULED
+  LIVE
+  FINAL
+}
+
+enum DriveEndReason {
+  TD
+  FG
+  PUNT
+  INT
+  FUMBLE
+  DOWNS
+  HALF
+  GAME
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -72,6 +109,13 @@ model League {
   rateLimitBuckets    RateLimitBucket[]
   abuseEvents         AbuseEvent[]
   settings            LeagueSettings?
+  teams               Team[]
+  seasons             Season[]
+  games               Game[]
+  drives              Drive[]
+  plays               Play[]
+  boxScores           BoxScore[]
+  standings           StandingsRow[]
 }
 
 model LeagueMember {
@@ -130,6 +174,7 @@ model Agent {
   rankedMatchesB   RankedMatch[] @relation("RankedMatchAgentB")
   rankedWins       RankedMatch[] @relation("RankedMatchWinner")
   abuseEvents      AbuseEvent[]
+  coachedTeams     Team[] @relation("TeamCoach")
 }
 
 model Task {
@@ -495,6 +540,12 @@ model EventLog {
   runbookRun RunbookRun? @relation(fields: [runbookRunId], references: [id], onDelete: SetNull)
   seasonPhaseId String?
   seasonPhase SeasonPhase? @relation(fields: [seasonPhaseId], references: [id], onDelete: SetNull)
+  gameId     String?
+  game       Game?      @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  driveId    String?
+  drive      Drive?     @relation(fields: [driveId], references: [id], onDelete: SetNull)
+  playId     String?
+  play       Play?      @relation(fields: [playId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
 }
 
@@ -686,4 +737,169 @@ model LeagueSettings {
   description String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Team {
+  id            String   @id @default(cuid())
+  leagueId      String   @default("league_afl_prime")
+  league        League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  name          String
+  shortName     String
+  color         String
+  logoUrl       String?
+  coachAgentId  String?
+  coachAgent    Agent?   @relation("TeamCoach", fields: [coachAgentId], references: [id], onDelete: SetNull)
+  schemeOffense TeamOffenseScheme
+  schemeDefense TeamDefenseScheme
+  createdAt     DateTime @default(now())
+
+  homeGames         Game[]         @relation("GameHomeTeam")
+  awayGames         Game[]         @relation("GameAwayTeam")
+  winningGames      Game[]         @relation("GameWinnerTeam")
+  offenseDrives     Drive[]        @relation("DriveOffenseTeam")
+  defenseDrives     Drive[]        @relation("DriveDefenseTeam")
+  offensePlays      Play[]         @relation("PlayOffenseTeam")
+  defensePlays      Play[]         @relation("PlayDefenseTeam")
+  standingsRows     StandingsRow[]
+
+  @@unique([leagueId, shortName])
+  @@index([leagueId, name])
+}
+
+model Season {
+  id            String       @id @default(cuid())
+  leagueId      String       @default("league_afl_prime")
+  league        League       @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  seasonNumber  Int
+  engineVersion String
+  status        SeasonStatus @default(PLANNED)
+  startDate     DateTime?
+  endDate       DateTime?
+  createdAt     DateTime     @default(now())
+
+  games         Game[]
+  standingsRows StandingsRow[]
+
+  @@unique([leagueId, seasonNumber])
+  @@index([leagueId, status])
+}
+
+model Game {
+  id            String     @id @default(cuid())
+  leagueId      String     @default("league_afl_prime")
+  league        League     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  seasonId      String
+  season        Season     @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  week          Int
+  kickoffAt     DateTime?
+  homeTeamId    String
+  homeTeam      Team       @relation("GameHomeTeam", fields: [homeTeamId], references: [id], onDelete: Cascade)
+  awayTeamId    String
+  awayTeam      Team       @relation("GameAwayTeam", fields: [awayTeamId], references: [id], onDelete: Cascade)
+  status        GameStatus @default(SCHEDULED)
+  seed          String
+  engineVersion String
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  durationMs    Int        @default(0)
+  scoreHome     Int        @default(0)
+  scoreAway     Int        @default(0)
+  winnerTeamId  String?
+  winnerTeam    Team?      @relation("GameWinnerTeam", fields: [winnerTeamId], references: [id], onDelete: SetNull)
+  createdAt     DateTime   @default(now())
+
+  drives        Drive[]
+  plays         Play[]
+  boxScore      BoxScore?
+  events        EventLog[]
+
+  @@unique([seasonId, week, homeTeamId, awayTeamId])
+  @@index([leagueId, week, status])
+  @@index([seasonId, status])
+}
+
+model Drive {
+  id               String         @id @default(cuid())
+  leagueId         String         @default("league_afl_prime")
+  league           League         @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  gameId           String
+  game             Game           @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  driveNumber      Int
+  offenseTeamId    String
+  offenseTeam      Team           @relation("DriveOffenseTeam", fields: [offenseTeamId], references: [id], onDelete: Cascade)
+  defenseTeamId    String
+  defenseTeam      Team           @relation("DriveDefenseTeam", fields: [defenseTeamId], references: [id], onDelete: Cascade)
+  startQtr         Int
+  startTimeSeconds Int
+  startYardLine    Int
+  endReason        DriveEndReason?
+  points           Int            @default(0)
+  createdAt        DateTime       @default(now())
+
+  plays            Play[]
+  events           EventLog[]
+
+  @@unique([gameId, driveNumber])
+  @@index([gameId, createdAt])
+}
+
+model Play {
+  id              String   @id @default(cuid())
+  leagueId        String   @default("league_afl_prime")
+  league          League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  gameId          String
+  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  driveId         String
+  drive           Drive    @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  playNumber      Int
+  qtr             Int
+  timeSeconds     Int
+  down            Int
+  distance        Int
+  yardLine        Int
+  offenseTeamId   String
+  offenseTeam     Team     @relation("PlayOffenseTeam", fields: [offenseTeamId], references: [id], onDelete: Cascade)
+  defenseTeamId   String
+  defenseTeam     Team     @relation("PlayDefenseTeam", fields: [defenseTeamId], references: [id], onDelete: Cascade)
+  offenseCallJson String
+  defenseCallJson String
+  resultJson      String
+  description     String
+  createdAt       DateTime @default(now())
+
+  events          EventLog[]
+
+  @@unique([gameId, playNumber])
+  @@index([gameId, driveId, playNumber])
+}
+
+model BoxScore {
+  id        String   @id @default(cuid())
+  leagueId  String   @default("league_afl_prime")
+  league    League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  gameId    String   @unique
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  statsJson String
+  createdAt DateTime @default(now())
+
+  @@index([leagueId, createdAt])
+}
+
+model StandingsRow {
+  id            String   @id @default(cuid())
+  leagueId      String   @default("league_afl_prime")
+  league        League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  seasonId      String
+  season        Season   @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  teamId        String
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  wins          Int      @default(0)
+  losses        Int      @default(0)
+  ties          Int      @default(0)
+  pointsFor     Int      @default(0)
+  pointsAgainst Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([seasonId, teamId])
+  @@index([leagueId, seasonId])
 }

@@ -342,7 +342,72 @@ const RUNBOOKS = [
     actionPayloadJson: JSON.stringify({ season: 0 }),
     isEnabled: true,
   },
+  {
+    name: "Start Week 1",
+    description: "Starts and advances all scheduled Week 1 Season 1 games.",
+    ownerAgentId: "commissioner",
+    triggerType: "MANUAL",
+    cron: null,
+    actionType: "RUN_WEEK",
+    actionPayloadJson: JSON.stringify({ seasonNumber: 1, week: 1 }),
+    isEnabled: true,
+  },
+  {
+    name: "Simulate All Games",
+    description: "Runs all remaining scheduled Season 1 games to completion.",
+    ownerAgentId: "chief-of-staff",
+    triggerType: "MANUAL",
+    cron: null,
+    actionType: "SIM_ALL_GAMES",
+    actionPayloadJson: JSON.stringify({ seasonNumber: 1 }),
+    isEnabled: true,
+  },
 ] as const;
+
+const SEASON1_ENGINE_VERSION = "engine@0.1.0";
+
+const TEAM_SEEDS = [
+  { name: "Apex Comets", shortName: "APX", color: "#38bdf8", schemeOffense: "SPREAD", schemeDefense: "ZONE", coachAgentId: "program-manager" },
+  { name: "Byte Hawks", shortName: "BYT", color: "#f97316", schemeOffense: "WEST_COAST", schemeDefense: "MAN", coachAgentId: "architect" },
+  { name: "Cipher Guard", shortName: "CGR", color: "#ef4444", schemeOffense: "POWER", schemeDefense: "BLITZ", coachAgentId: "security" },
+  { name: "Delta Forge", shortName: "DLT", color: "#22c55e", schemeOffense: "VERTICAL", schemeDefense: "SHELL", coachAgentId: "sre" },
+  { name: "Echo Knights", shortName: "EKO", color: "#a855f7", schemeOffense: "SPREAD", schemeDefense: "ZONE", coachAgentId: "qa-engineer" },
+  { name: "Flux Rangers", shortName: "FLX", color: "#14b8a6", schemeOffense: "WEST_COAST", schemeDefense: "ZONE", coachAgentId: "backend-engineer" },
+  { name: "Grid Titans", shortName: "GRD", color: "#facc15", schemeOffense: "POWER", schemeDefense: "MAN", coachAgentId: "scheduler" },
+  { name: "Helix Blaze", shortName: "HLX", color: "#fb7185", schemeOffense: "VERTICAL", schemeDefense: "SHELL", coachAgentId: "rankings" },
+] as const;
+
+function roundRobinPairings(teamIds: string[]): Array<Array<{ homeTeamId: string; awayTeamId: string }>> {
+  if (teamIds.length % 2 !== 0) throw new Error("Team count must be even");
+  const teams = [...teamIds];
+  const weeks: Array<Array<{ homeTeamId: string; awayTeamId: string }>> = [];
+  const rounds = teams.length - 1;
+  for (let round = 0; round < rounds; round += 1) {
+    const weekGames: Array<{ homeTeamId: string; awayTeamId: string }> = [];
+    for (let i = 0; i < teams.length / 2; i += 1) {
+      const a = teams[i];
+      const b = teams[teams.length - 1 - i];
+      const homeTeamId = (round + i) % 2 === 0 ? a : b;
+      const awayTeamId = (round + i) % 2 === 0 ? b : a;
+      weekGames.push({ homeTeamId, awayTeamId });
+    }
+    weeks.push(weekGames);
+    const fixed = teams[0];
+    const rotating = teams.slice(1);
+    const last = rotating.pop()!;
+    rotating.unshift(last);
+    teams.splice(0, teams.length, fixed, ...rotating);
+  }
+  return weeks;
+}
+
+function deterministicGameSeed(seasonNumber: number, week: number, homeTeamId: string, awayTeamId: string): string {
+  return crypto
+    .createHash("sha256")
+    .update(`season:${seasonNumber}|week:${week}|home:${homeTeamId}|away:${awayTeamId}`)
+    .digest("hex")
+    .slice(0, 16);
+}
 
 async function ensureProposalWithApproval(input: {
   leagueId: string;
@@ -631,6 +696,128 @@ async function main() {
   }
   console.log(`Upserted ${RUNBOOKS.length} runbooks.`);
 
+  const knownAgentIds = new Set(
+    (await prisma.agent.findMany({
+      where: { leagueId: DEFAULT_LEAGUE_ID },
+      select: { id: true },
+    })).map((a) => a.id)
+  );
+
+  const seededTeams: Array<{ id: string; shortName: string; name: string }> = [];
+  for (const team of TEAM_SEEDS) {
+    const coachAgentId = team.coachAgentId && knownAgentIds.has(team.coachAgentId) ? team.coachAgentId : null;
+    const upserted = await prisma.team.upsert({
+      where: {
+        leagueId_shortName: {
+          leagueId: DEFAULT_LEAGUE_ID,
+          shortName: team.shortName,
+        },
+      },
+      update: {
+        name: team.name,
+        color: team.color,
+        coachAgentId,
+        schemeOffense: team.schemeOffense,
+        schemeDefense: team.schemeDefense,
+      },
+      create: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        name: team.name,
+        shortName: team.shortName,
+        color: team.color,
+        coachAgentId,
+        schemeOffense: team.schemeOffense,
+        schemeDefense: team.schemeDefense,
+      },
+      select: { id: true, shortName: true, name: true },
+    });
+    seededTeams.push(upserted);
+  }
+  console.log(`Upserted ${seededTeams.length} Season 1 teams.`);
+
+  const season1 = await prisma.season.upsert({
+    where: {
+      leagueId_seasonNumber: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        seasonNumber: 1,
+      },
+    },
+    update: {
+      engineVersion: SEASON1_ENGINE_VERSION,
+      status: "PLANNED",
+      startDate: null,
+      endDate: null,
+    },
+    create: {
+      leagueId: DEFAULT_LEAGUE_ID,
+      seasonNumber: 1,
+      engineVersion: SEASON1_ENGINE_VERSION,
+      status: "PLANNED",
+    },
+  });
+
+  for (const team of seededTeams) {
+    await prisma.standingsRow.upsert({
+      where: {
+        seasonId_teamId: {
+          seasonId: season1.id,
+          teamId: team.id,
+        },
+      },
+      update: {},
+      create: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        seasonId: season1.id,
+        teamId: team.id,
+        wins: 0,
+        losses: 0,
+        ties: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
+      },
+    });
+  }
+
+  const weekPairings = roundRobinPairings(seededTeams.map((t) => t.id));
+  let gameCount = 0;
+  const kickoffBase = new Date("2026-09-06T17:00:00.000Z");
+  for (let weekIndex = 0; weekIndex < weekPairings.length; weekIndex += 1) {
+    const week = weekIndex + 1;
+    for (const [gameOffset, pairing] of weekPairings[weekIndex].entries()) {
+      const kickoffAt = new Date(kickoffBase.getTime() + weekIndex * 7 * 24 * 60 * 60 * 1000 + gameOffset * 2 * 60 * 60 * 1000);
+      await prisma.game.upsert({
+        where: {
+          seasonId_week_homeTeamId_awayTeamId: {
+            seasonId: season1.id,
+            week,
+            homeTeamId: pairing.homeTeamId,
+            awayTeamId: pairing.awayTeamId,
+          },
+        },
+        update: {
+          leagueId: DEFAULT_LEAGUE_ID,
+          kickoffAt,
+          status: "SCHEDULED",
+          seed: deterministicGameSeed(1, week, pairing.homeTeamId, pairing.awayTeamId),
+          engineVersion: SEASON1_ENGINE_VERSION,
+        },
+        create: {
+          leagueId: DEFAULT_LEAGUE_ID,
+          seasonId: season1.id,
+          week,
+          kickoffAt,
+          homeTeamId: pairing.homeTeamId,
+          awayTeamId: pairing.awayTeamId,
+          status: "SCHEDULED",
+          seed: deterministicGameSeed(1, week, pairing.homeTeamId, pairing.awayTeamId),
+          engineVersion: SEASON1_ENGINE_VERSION,
+        },
+      });
+      gameCount += 1;
+    }
+  }
+  console.log(`Upserted Season 1 schedule with ${gameCount} games across ${weekPairings.length} weeks.`);
+
   await prisma.agentRegistration.upsert({
     where: { claimCode: "AFL-DEMO-CLAIM" },
     update: {
@@ -753,12 +940,16 @@ async function main() {
     data: {
       leagueId: DEFAULT_LEAGUE_ID,
       type: "SEED",
-      summary: "Season 0 v5 seed complete. League, users, agents, governance records, submissions, and ranked bootstrap ready.",
+      summary: "Season 0 v5 + Season 1 bootstrap seed complete. League, agents, governance, ranked, teams, and schedule ready.",
       meta: JSON.stringify({
         agentCount: AGENTS.length,
         phaseCount: SEASON_PHASES.length,
         runbookCount: RUNBOOKS.length,
         rankedRatings: AGENTS.length,
+        season1Teams: TEAM_SEEDS.length,
+        season1Weeks: 7,
+        season1Games: 28,
+        season1EngineVersion: SEASON1_ENGINE_VERSION,
         hasLeagueSettings: true,
         hasSeedSubmission: true,
         defaultLeagueId: DEFAULT_LEAGUE_ID,
