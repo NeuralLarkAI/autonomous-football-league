@@ -17,9 +17,34 @@ export async function PATCH(
     const existing = await prisma.runbook.findFirst({ where: { id, leagueId: league.id } });
     if (!existing) return NextResponse.json({ error: "Runbook not found" }, { status: 404 });
 
+    const triggerType = parsed.data.triggerType ?? existing.triggerType;
+    const scheduleType = parsed.data.scheduleType ?? existing.scheduleType;
+    const intervalSeconds = parsed.data.intervalSeconds ?? existing.intervalSeconds;
+    const enabling = parsed.data.isEnabled === true;
+
+    const data = {
+      ...parsed.data,
+      nextRunAt:
+        parsed.data.nextRunAt === undefined
+          ? undefined
+          : parsed.data.nextRunAt === null
+            ? null
+            : new Date(parsed.data.nextRunAt),
+    };
+
+    if (
+      data.nextRunAt === undefined &&
+      triggerType === "SCHEDULED" &&
+      scheduleType === "INTERVAL" &&
+      intervalSeconds &&
+      (enabling || existing.nextRunAt === null)
+    ) {
+      data.nextRunAt = new Date(Date.now() + intervalSeconds * 1000);
+    }
+
     const runbook = await prisma.runbook.update({
       where: { id },
-      data: parsed.data,
+      data,
     });
 
     await prisma.eventLog.create({
@@ -31,7 +56,7 @@ export async function PATCH(
         entityType: "RUNBOOK",
         entityId: runbook.id,
         runbookId: runbook.id,
-        meta: JSON.stringify(parsed.data),
+        meta: JSON.stringify(data),
       },
     });
 

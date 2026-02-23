@@ -35,10 +35,16 @@ export async function POST(req: NextRequest) {
         description: parsed.data.description,
         ownerAgentId: parsed.data.ownerAgentId ?? null,
         triggerType: parsed.data.triggerType,
+        scheduleType: parsed.data.scheduleType,
+        intervalSeconds: parsed.data.intervalSeconds ?? null,
         cron: parsed.data.cron ?? null,
         actionType: parsed.data.actionType,
         actionPayloadJson: parsed.data.actionPayloadJson ?? "{}",
         isEnabled: parsed.data.isEnabled,
+        nextRunAt:
+          parsed.data.triggerType === "SCHEDULED" && parsed.data.scheduleType === "INTERVAL" && parsed.data.intervalSeconds
+            ? new Date(Date.now() + parsed.data.intervalSeconds * 1000)
+            : null,
       },
     });
 

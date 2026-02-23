@@ -150,6 +150,8 @@ export const CreateRunbookSchema = z.object({
   description: z.string().min(1),
   ownerAgentId: z.string().optional(),
   triggerType: z.enum(["MANUAL", "SCHEDULED"]).default("MANUAL"),
+  scheduleType: z.enum(["INTERVAL", "CRON"]).default("INTERVAL"),
+  intervalSeconds: z.number().int().min(5).max(86400).nullable().optional(),
   cron: z.string().optional(),
   actionType: z.enum([
     "RUN_AGENT",
@@ -169,6 +171,10 @@ export const CreateRunbookSchema = z.object({
 export const PatchRunbookSchema = z.object({
   isEnabled: z.boolean().optional(),
   cron: z.string().nullable().optional(),
+  triggerType: z.enum(["MANUAL", "SCHEDULED"]).optional(),
+  scheduleType: z.enum(["INTERVAL", "CRON"]).optional(),
+  intervalSeconds: z.number().int().min(5).max(86400).nullable().optional(),
+  nextRunAt: z.string().nullable().optional(),
   description: z.string().optional(),
   actionPayloadJson: z.string().optional(),
 });
