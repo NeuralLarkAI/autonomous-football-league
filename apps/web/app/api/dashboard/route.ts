@@ -47,6 +47,7 @@ export async function GET() {
       openTaskCount: taskCount,
       pendingApprovals,
       lastEventAt: lastEvent?.createdAt ?? null,
+      autoRunEnabled: leagueState?.autoRunEnabled ?? false,
       seasonLock: leagueState?.seasonLock ?? false,
       season: leagueState?.season ?? 0,
       phase: leagueState?.phase ?? "PRE_SEASON",

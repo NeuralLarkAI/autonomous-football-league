@@ -6,17 +6,23 @@ type Runbook = {
   id: string;
   name: string;
   description: string;
-  triggerType: string;
+  triggerType: "MANUAL" | "SCHEDULED";
+  scheduleType: "INTERVAL" | "CRON";
+  intervalSeconds: number | null;
   cron: string | null;
   actionType: string;
   actionPayloadJson: string;
   isEnabled: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  failureCount: number;
   ownerAgent: { id: string; name: string } | null;
   runs: Array<{
     id: string;
     status: string;
     createdAt: string;
     outputSummary: string;
+    errorText: string | null;
   }>;
 };
 
@@ -27,19 +33,29 @@ export default function RunbooksPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [intervalDrafts, setIntervalDrafts] = useState<Record<string, number>>({});
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [ownerAgentId, setOwnerAgentId] = useState("");
   const [actionType, setActionType] = useState("RUN_AGENT");
   const [payload, setPayload] = useState("{\"agentId\":\"integrity\"}");
-  const [triggerType, setTriggerType] = useState("MANUAL");
+  const [triggerType, setTriggerType] = useState<"MANUAL" | "SCHEDULED">("MANUAL");
+  const [scheduleType, setScheduleType] = useState<"INTERVAL" | "CRON">("INTERVAL");
+  const [intervalSeconds, setIntervalSeconds] = useState(900);
   const [cron, setCron] = useState("");
 
   const load = useCallback(async () => {
     const [runbooksRes, agentsRes] = await Promise.all([fetch("/api/runbooks"), fetch("/api/agents")]);
     const [runbooksData, agentsData] = await Promise.all([runbooksRes.json(), agentsRes.json()]);
-    setRunbooks(Array.isArray(runbooksData) ? runbooksData : []);
+    const rows = Array.isArray(runbooksData) ? (runbooksData as Runbook[]) : [];
+    setRunbooks(rows);
+    setIntervalDrafts(
+      rows.reduce<Record<string, number>>((acc, row) => {
+        acc[row.id] = row.intervalSeconds ?? 900;
+        return acc;
+      }, {})
+    );
     setAgents(Array.isArray(agentsData) ? agentsData : []);
   }, []);
 
@@ -69,6 +85,24 @@ export default function RunbooksPage() {
     setBusy(null);
   };
 
+  const saveSchedule = async (runbook: Runbook) => {
+    setBusy(runbook.id);
+    const interval = Math.max(5, Number(intervalDrafts[runbook.id] ?? runbook.intervalSeconds ?? 900));
+    const res = await fetch(`/api/runbooks/${runbook.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        triggerType: runbook.triggerType,
+        scheduleType: runbook.scheduleType,
+        intervalSeconds: runbook.scheduleType === "INTERVAL" ? interval : null,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setMessage(res.ok ? "Schedule updated." : data.error ?? "Schedule update failed.");
+    await load();
+    setBusy(null);
+  };
+
   const createRunbook = async (e: FormEvent) => {
     e.preventDefault();
     setBusy("create");
@@ -80,7 +114,9 @@ export default function RunbooksPage() {
         description,
         ownerAgentId: ownerAgentId || undefined,
         triggerType,
-        cron: triggerType === "SCHEDULED" ? cron : undefined,
+        scheduleType,
+        intervalSeconds: triggerType === "SCHEDULED" && scheduleType === "INTERVAL" ? intervalSeconds : undefined,
+        cron: triggerType === "SCHEDULED" && scheduleType === "CRON" ? cron : undefined,
         actionType,
         actionPayloadJson: payload,
         isEnabled: true,
@@ -93,6 +129,7 @@ export default function RunbooksPage() {
       setDescription("");
       setPayload("{\"agentId\":\"integrity\"}");
       setCron("");
+      setIntervalSeconds(900);
     }
     await load();
     setBusy(null);
@@ -107,7 +144,7 @@ export default function RunbooksPage() {
         <h2 className="text-sm font-semibold text-slate-200">Create Runbook</h2>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name" className="w-full rounded bg-slate-900 px-2 py-1 text-sm text-slate-200" />
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="description" className="w-full rounded bg-slate-900 px-2 py-1 text-sm text-slate-200" />
-        <div className="grid gap-2 md:grid-cols-4">
+        <div className="grid gap-2 md:grid-cols-5">
           <select value={ownerAgentId} onChange={(e) => setOwnerAgentId(e.target.value)} className="rounded bg-slate-900 px-2 py-1 text-sm text-slate-200">
             <option value="">Owner (optional)</option>
             {agents.map((a) => (
@@ -125,11 +162,26 @@ export default function RunbooksPage() {
             <option value="POST_WEEKLY_SLATE">POST_WEEKLY_SLATE</option>
             <option value="POST_WEEKLY_RECAP">POST_WEEKLY_RECAP</option>
           </select>
-          <select value={triggerType} onChange={(e) => setTriggerType(e.target.value)} className="rounded bg-slate-900 px-2 py-1 text-sm text-slate-200">
+          <select value={triggerType} onChange={(e) => setTriggerType(e.target.value as "MANUAL" | "SCHEDULED")} className="rounded bg-slate-900 px-2 py-1 text-sm text-slate-200">
             <option value="MANUAL">MANUAL</option>
             <option value="SCHEDULED">SCHEDULED</option>
           </select>
-          <input value={cron} onChange={(e) => setCron(e.target.value)} placeholder="cron (optional)" className="rounded bg-slate-900 px-2 py-1 text-sm text-slate-200" />
+          <select value={scheduleType} onChange={(e) => setScheduleType(e.target.value as "INTERVAL" | "CRON")} className="rounded bg-slate-900 px-2 py-1 text-sm text-slate-200">
+            <option value="INTERVAL">INTERVAL</option>
+            <option value="CRON">CRON</option>
+          </select>
+          {scheduleType === "INTERVAL" ? (
+            <input
+              type="number"
+              min={5}
+              value={intervalSeconds}
+              onChange={(e) => setIntervalSeconds(Number(e.target.value))}
+              placeholder="interval seconds"
+              className="rounded bg-slate-900 px-2 py-1 text-sm text-slate-200"
+            />
+          ) : (
+            <input value={cron} onChange={(e) => setCron(e.target.value)} placeholder="cron (optional)" className="rounded bg-slate-900 px-2 py-1 text-sm text-slate-200" />
+          )}
         </div>
         <textarea value={payload} onChange={(e) => setPayload(e.target.value)} rows={3} className="w-full rounded bg-slate-900 px-2 py-1 text-xs text-slate-200" />
         <button disabled={busy === "create"} className="rounded bg-blue-700 px-3 py-1.5 text-sm text-blue-100 disabled:opacity-50">
@@ -151,9 +203,13 @@ export default function RunbooksPage() {
               </div>
               <p className="mt-1 text-sm text-slate-300">{runbook.description}</p>
               <p className="mt-1 text-xs text-slate-500">
-                {runbook.actionType} · {runbook.triggerType} {runbook.cron ? `· ${runbook.cron}` : ""}
+                {runbook.actionType} - {runbook.triggerType} - {runbook.scheduleType}
+                {runbook.scheduleType === "INTERVAL" ? ` - every ${runbook.intervalSeconds ?? "-"}s` : runbook.cron ? ` - ${runbook.cron}` : ""}
               </p>
-              <div className="mt-2 flex gap-2">
+              <p className="mt-1 text-xs text-slate-500">
+                lastRunAt: {runbook.lastRunAt ? new Date(runbook.lastRunAt).toLocaleString() : "-"} - nextRunAt: {runbook.nextRunAt ? new Date(runbook.nextRunAt).toLocaleString() : "-"} - failures: {runbook.failureCount}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   onClick={() => runNow(runbook.id)}
                   disabled={busy === runbook.id || !runbook.isEnabled}
@@ -168,11 +224,29 @@ export default function RunbooksPage() {
                 >
                   {runbook.isEnabled ? "Disable" : "Enable"}
                 </button>
+                {runbook.triggerType === "SCHEDULED" && runbook.scheduleType === "INTERVAL" && (
+                  <>
+                    <input
+                      type="number"
+                      min={5}
+                      value={intervalDrafts[runbook.id] ?? 900}
+                      onChange={(e) => setIntervalDrafts((prev) => ({ ...prev, [runbook.id]: Number(e.target.value) }))}
+                      className="w-28 rounded bg-slate-900 px-2 py-1 text-xs text-slate-200"
+                    />
+                    <button
+                      onClick={() => saveSchedule(runbook)}
+                      disabled={busy === runbook.id}
+                      className="rounded bg-indigo-700 px-2 py-1 text-xs text-indigo-100 disabled:opacity-50"
+                    >
+                      Save Interval
+                    </button>
+                  </>
+                )}
               </div>
               <div className="mt-2 space-y-1">
                 {runbook.runs.slice(0, 3).map((r) => (
                   <p key={r.id} className="text-xs text-slate-500">
-                    {new Date(r.createdAt).toLocaleString()} · {r.status} · {r.outputSummary || "No summary"}
+                    {new Date(r.createdAt).toLocaleString()} - {r.status} - {r.outputSummary || r.errorText || "No summary"}
                   </p>
                 ))}
               </div>

@@ -9,6 +9,7 @@ interface DashboardStats {
   openTaskCount: number;
   pendingApprovals: number;
   lastEventAt: string | null;
+  autoRunEnabled: boolean;
   seasonLock: boolean;
   season: number;
   phase: string;
@@ -53,7 +54,19 @@ export default function DashboardPage() {
   const [nextGames, setNextGames] = useState<Array<{ id: string; week: number; awayTeam: { shortName: string }; homeTeam: { shortName: string }; kickoffAt: string | null }>>([]);
   const [socialPreview, setSocialPreview] = useState<Array<{ id: string; title: string; createdAt: string }>>([]);
   const [ladderPreview, setLadderPreview] = useState<Array<{ agentId: string; agentName: string; rating: number }>>([]);
+  const [upcomingRuns, setUpcomingRuns] = useState<
+    Array<{
+      id: string;
+      name: string;
+      actionType: string;
+      nextRunAt: string | null;
+      lastRunAt: string | null;
+      failureCount: number;
+      latestRun: { status: string; startedAt: string | null; finishedAt: string | null; errorText: string | null } | null;
+    }>
+  >([]);
   const [togglingLock, setTogglingLock] = useState(false);
+  const [togglingAutoRun, setTogglingAutoRun] = useState(false);
   const [quickAction, setQuickAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -100,12 +113,14 @@ export default function DashboardPage() {
       fetch(`/api/l/${leagueSlug}/games?status=SCHEDULED`).then((r) => r.json()).catch(() => []),
       fetch("/api/social/posts").then((r) => r.json()).catch(() => []),
       fetch(`/api/l/${leagueSlug}/ranked`).then((r) => r.json()).catch(() => ({ leaderboard: [] })),
-    ]).then(([dashboard, live, scheduled, social, ranked]) => {
+      fetch(`/api/l/${leagueSlug}/runbooks/next`).then((r) => r.json()).catch(() => []),
+    ]).then(([dashboard, live, scheduled, social, ranked, next]) => {
       setStats(dashboard);
       setLiveGames(Array.isArray(live) ? live.slice(0, 3) : []);
       setNextGames(Array.isArray(scheduled) ? scheduled.slice(0, 3) : []);
       setSocialPreview(Array.isArray(social) ? social.slice(0, 3) : []);
       setLadderPreview(Array.isArray(ranked?.leaderboard) ? ranked.leaderboard.slice(0, 10) : []);
+      setUpcomingRuns(Array.isArray(next) ? next : []);
     }),
     [leagueSlug]
   );
@@ -233,6 +248,46 @@ export default function DashboardPage() {
     }
   };
 
+  const toggleAutoRun = async () => {
+    if (!stats) return;
+    setTogglingAutoRun(true);
+    try {
+      const r = await fetch(`/api/l/${leagueSlug}/autorun`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !stats.autoRunEnabled }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) setMessage(d.error ?? "Auto-run update failed.");
+      else setMessage(!stats.autoRunEnabled ? "Auto-run enabled." : "Auto-run disabled.");
+      await load();
+    } finally {
+      setTogglingAutoRun(false);
+    }
+  };
+
+  const runDueNow = async () => {
+    setQuickAction("run-due");
+    setMessage(null);
+    try {
+      const now = Date.now();
+      const due = upcomingRuns.filter((r) => r.nextRunAt && new Date(r.nextRunAt).getTime() <= now);
+      if (due.length === 0) {
+        setMessage("No due scheduled runbooks right now.");
+        return;
+      }
+      let ran = 0;
+      for (const runbook of due) {
+        const res = await fetch(`/api/runbooks/${runbook.id}/run`, { method: "POST" });
+        if (res.ok) ran += 1;
+      }
+      setMessage(`Triggered ${ran}/${due.length} due runbook(s).`);
+      await load();
+    } finally {
+      setQuickAction(null);
+    }
+  };
+
   const statCards = [
     { label: "Active Agents", value: stats ? stats.agentCount : "..." },
     { label: "Open Tasks", value: stats ? stats.openTaskCount : "..." },
@@ -304,6 +359,58 @@ export default function DashboardPage() {
           )}
           <Link href="/runbooks" className="mt-2 inline-block text-xs text-blue-400 hover:underline">
             Open runbooks
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-200">Auto-run</h2>
+            <span
+              className={`rounded px-2 py-0.5 text-xs ${
+                stats?.autoRunEnabled ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-700 text-slate-300"
+              }`}
+            >
+              {stats?.autoRunEnabled ? "ENABLED" : "DISABLED"}
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            When enabled, scheduled runbooks execute continuously without manual clicks.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={toggleAutoRun}
+              disabled={togglingAutoRun}
+              className="rounded bg-indigo-700 px-3 py-1.5 text-xs text-indigo-100 hover:bg-indigo-600 disabled:opacity-50"
+            >
+              {togglingAutoRun ? "Updating..." : stats?.autoRunEnabled ? "Disable Auto-run" : "Enable Auto-run"}
+            </button>
+            <button
+              onClick={runDueNow}
+              disabled={quickAction !== null}
+              className="rounded bg-slate-700 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-600 disabled:opacity-50"
+            >
+              {quickAction === "run-due" ? "Running..." : "Run due now"}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <h2 className="text-sm font-semibold text-slate-200">Upcoming Runs</h2>
+          {upcomingRuns.length === 0 ? (
+            <p className="mt-1 text-sm text-slate-500">No scheduled runbooks.</p>
+          ) : (
+            <div className="mt-2 space-y-1 text-xs text-slate-300">
+              {upcomingRuns.slice(0, 5).map((run) => (
+                <p key={run.id}>
+                  {run.name} - {run.nextRunAt ? new Date(run.nextRunAt).toLocaleTimeString() : "unscheduled"} - failures {run.failureCount}
+                </p>
+              ))}
+            </div>
+          )}
+          <Link href="/runbooks" className="mt-2 inline-block text-xs text-blue-400 hover:underline">
+            Manage schedules
           </Link>
         </div>
       </div>
