@@ -464,7 +464,7 @@ async function ensureProposalWithApproval(input: {
 }
 
 async function main() {
-  console.log("Seeding AFL Season 0 v4...");
+  console.log("Seeding AFL Season 0 v5...");
 
   await prisma.user.upsert({
     where: { email: "commissioner@afl.local" },
@@ -503,6 +503,21 @@ async function main() {
     },
   });
 
+  await prisma.leagueSettings.upsert({
+    where: { leagueId: DEFAULT_LEAGUE_ID },
+    update: {
+      isPublic: true,
+      publicName: "AFL Prime",
+      description: "Public spectator view for Season 0 governance and ranked combine ladder.",
+    },
+    create: {
+      leagueId: DEFAULT_LEAGUE_ID,
+      isPublic: true,
+      publicName: "AFL Prime",
+      description: "Public spectator view for Season 0 governance and ranked combine ladder.",
+    },
+  });
+
   for (const a of AGENTS) {
     await prisma.agent.upsert({
       where: { id: a.id },
@@ -532,6 +547,25 @@ async function main() {
     });
   }
   console.log(`Upserted ${AGENTS.length} agents.`);
+
+  for (const a of AGENTS) {
+    await prisma.rankedRating.upsert({
+      where: {
+        leagueId_agentId: {
+          leagueId: DEFAULT_LEAGUE_ID,
+          agentId: a.id,
+        },
+      },
+      update: {},
+      create: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        agentId: a.id,
+        rating: 1000,
+        matches: 0,
+      },
+    });
+  }
+  console.log(`Upserted ${AGENTS.length} ranked ratings.`);
 
   await prisma.leagueState.upsert({
     where: { id: "singleton" },
@@ -622,6 +656,67 @@ async function main() {
     },
   });
 
+  const seededSubmission = await prisma.agentSubmission.upsert({
+    where: {
+      agentId_version: {
+        agentId: "architect",
+        version: 1,
+      },
+    },
+    update: {
+      leagueId: DEFAULT_LEAGUE_ID,
+      status: "COMBINE_PENDING",
+      entryFile: "index.js",
+      checksum: "seed_architect_v1_checksum",
+      sizeBytes: 256,
+    },
+    create: {
+      leagueId: DEFAULT_LEAGUE_ID,
+      agentId: "architect",
+      version: 1,
+      status: "COMBINE_PENDING",
+      entryFile: "index.js",
+      checksum: "seed_architect_v1_checksum",
+      sizeBytes: 256,
+    },
+  });
+
+  const submissionArtifact = await prisma.submissionArtifact.findFirst({
+    where: {
+      submissionId: seededSubmission.id,
+      filePath: ".data/uploads/league_afl_prime/architect/1/index.js",
+    },
+  });
+
+  if (!submissionArtifact) {
+    await prisma.submissionArtifact.create({
+      data: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        submissionId: seededSubmission.id,
+        filePath: ".data/uploads/league_afl_prime/architect/1/index.js",
+      },
+    });
+  }
+
+  const submissionValidation = await prisma.validationResult.findFirst({
+    where: {
+      submissionId: seededSubmission.id,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!submissionValidation) {
+    await prisma.validationResult.create({
+      data: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        submissionId: seededSubmission.id,
+        ok: true,
+        errorsJson: "[]",
+        warningsJson: JSON.stringify(["Seed artifact created for v5 submission workflow smoke tests."]),
+      },
+    });
+  }
+
   await ensureProposalWithApproval({
     leagueId: DEFAULT_LEAGUE_ID,
     title: "Anti-Tampering Escalation Policy v2",
@@ -658,11 +753,14 @@ async function main() {
     data: {
       leagueId: DEFAULT_LEAGUE_ID,
       type: "SEED",
-      summary: "Season 0 v4 seed complete. League, users, agents, governance records, phases, and runbooks ready.",
+      summary: "Season 0 v5 seed complete. League, users, agents, governance records, submissions, and ranked bootstrap ready.",
       meta: JSON.stringify({
         agentCount: AGENTS.length,
         phaseCount: SEASON_PHASES.length,
         runbookCount: RUNBOOKS.length,
+        rankedRatings: AGENTS.length,
+        hasLeagueSettings: true,
+        hasSeedSubmission: true,
         defaultLeagueId: DEFAULT_LEAGUE_ID,
         defaultUserId: DEFAULT_USER_ID,
       }),

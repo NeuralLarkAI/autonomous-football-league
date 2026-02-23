@@ -64,6 +64,14 @@ model League {
   agentRegistrations  AgentRegistration[]
   agentClaims         AgentClaim[]
   apiKeys             ApiKey[]
+  submissions         AgentSubmission[]
+  submissionArtifacts SubmissionArtifact[]
+  validationResults   ValidationResult[]
+  rankedRatings       RankedRating[]
+  rankedMatches       RankedMatch[]
+  rateLimitBuckets    RateLimitBucket[]
+  abuseEvents         AbuseEvent[]
+  settings            LeagueSettings?
 }
 
 model LeagueMember {
@@ -116,6 +124,12 @@ model Agent {
   runbooksOwned    Runbook[]       @relation("RunbookOwner")
   claims           AgentClaim[]
   apiKeys          ApiKey[]
+  submissions      AgentSubmission[]
+  rankedRatings    RankedRating[]
+  rankedMatchesA   RankedMatch[] @relation("RankedMatchAgentA")
+  rankedMatchesB   RankedMatch[] @relation("RankedMatchAgentB")
+  rankedWins       RankedMatch[] @relation("RankedMatchWinner")
+  abuseEvents      AbuseEvent[]
 }
 
 model Task {
@@ -350,6 +364,8 @@ model CombineRun {
   scoreLatency     Float    @default(0)
   scoreReliability Float    @default(0)
   notes            String   @default("")
+  submissionId     String?
+  submission       AgentSubmission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
   createdAt        DateTime @default(now())
 
   scenarioResults CombineScenarioResult[]
@@ -456,6 +472,7 @@ model EventLog {
   agent      Agent?   @relation(fields: [agentId], references: [id])
   type       String   // AGENT_RUN | TASK_CREATED | TASK_UPDATED | APPROVAL_CREATED | APPROVED | REJECTED | DEFERRED | SIGNOFF_* | PROPOSAL_* | INCIDENT_* | SEASON_LOCK | KICKOFF | SEED
   tier       Int?
+  visibility String   @default("LEAGUE_ONLY") // PUBLIC|LEAGUE_ONLY|PRIVATE
   summary    String
   meta       String   @default("{}") // JSON
   entityType String?  // TASK | APPROVAL | PROPOSAL | INCIDENT | AGENT | POST | COMBINE_RUN | RUNBOOK | SEASON_PHASE
@@ -530,6 +547,8 @@ model ApiKey {
   createdAt DateTime @default(now())
 
   scopes ScopeGrant[]
+  rateLimits RateLimitBucket[]
+  abuseEvents AbuseEvent[]
 }
 
 model ScopeGrant {
@@ -540,4 +559,131 @@ model ScopeGrant {
   createdAt DateTime @default(now())
 
   @@unique([apiKeyId, scope])
+}
+
+model AgentSubmission {
+  id         String   @id @default(cuid())
+  leagueId   String   @default("league_afl_prime")
+  league     League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  agentId    String
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  version    Int
+  status     String   @default("DRAFT") // DRAFT|UPLOADED|VALIDATING|VALID|INVALID|COMBINE_PENDING|COMBINE_PASSED|COMBINE_FAILED|RANKED_APPROVED|RETIRED
+  entryFile  String   @default("index.js")
+  checksum   String
+  sizeBytes  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  artifacts  SubmissionArtifact[]
+  validations ValidationResult[]
+  combineRuns CombineRun[]
+  rankedMatchesA RankedMatch[] @relation("SubmissionA")
+  rankedMatchesB RankedMatch[] @relation("SubmissionB")
+
+  @@unique([agentId, version])
+  @@index([leagueId, status])
+}
+
+model SubmissionArtifact {
+  id           String   @id @default(cuid())
+  leagueId     String   @default("league_afl_prime")
+  league       League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  submissionId String
+  submission   AgentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  filePath     String
+  contentBlob  Bytes?
+  createdAt    DateTime @default(now())
+
+  @@index([submissionId])
+}
+
+model ValidationResult {
+  id           String   @id @default(cuid())
+  leagueId     String   @default("league_afl_prime")
+  league       League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  submissionId String
+  submission   AgentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  ok           Boolean  @default(false)
+  errorsJson   String   @default("[]")
+  warningsJson String   @default("[]")
+  createdAt    DateTime @default(now())
+
+  @@index([submissionId, createdAt])
+}
+
+model RankedRating {
+  id        String   @id @default(cuid())
+  leagueId  String   @default("league_afl_prime")
+  league    League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  rating    Int      @default(1000)
+  matches   Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([leagueId, agentId])
+}
+
+model RankedMatch {
+  id            String   @id @default(cuid())
+  leagueId      String   @default("league_afl_prime")
+  league        League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  agentAId      String
+  agentA        Agent    @relation("RankedMatchAgentA", fields: [agentAId], references: [id], onDelete: Cascade)
+  agentBId      String
+  agentB        Agent    @relation("RankedMatchAgentB", fields: [agentBId], references: [id], onDelete: Cascade)
+  submissionAId String?
+  submissionA   AgentSubmission? @relation("SubmissionA", fields: [submissionAId], references: [id], onDelete: SetNull)
+  submissionBId String?
+  submissionB   AgentSubmission? @relation("SubmissionB", fields: [submissionBId], references: [id], onDelete: SetNull)
+  matchType     String   @default("COMBINE_DUEL") // COMBINE_DUEL
+  seed          Int      @default(0)
+  scoreA        Float    @default(0)
+  scoreB        Float    @default(0)
+  winnerAgentId String?
+  winnerAgent   Agent?   @relation("RankedMatchWinner", fields: [winnerAgentId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+
+  @@index([leagueId, createdAt])
+}
+
+model RateLimitBucket {
+  id            String   @id @default(cuid())
+  leagueId      String   @default("league_afl_prime")
+  league        League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  apiKeyId      String
+  apiKey        ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  windowStart   DateTime
+  windowSeconds Int
+  count         Int      @default(0)
+
+  @@unique([apiKeyId, windowStart, windowSeconds])
+  @@index([leagueId, windowStart])
+}
+
+model AbuseEvent {
+  id        String   @id @default(cuid())
+  leagueId  String   @default("league_afl_prime")
+  league    League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  apiKeyId  String?
+  apiKey    ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  agentId   String?
+  agent     Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  type      String   // RATE_LIMIT|SPAM|AUTHZ_DENIED|MALFORMED_PAYLOAD
+  detail    String
+  createdAt DateTime @default(now())
+
+  @@index([leagueId, createdAt])
+}
+
+model LeagueSettings {
+  id          String   @id @default(cuid())
+  leagueId    String   @unique
+  league      League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  isPublic    Boolean  @default(false)
+  publicName  String?
+  description String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
