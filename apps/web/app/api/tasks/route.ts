@@ -5,7 +5,10 @@ export async function GET() {
   try {
     const tasks = await prisma.task.findMany({
       orderBy: { createdAt: "desc" },
-      include: { assignee: { select: { id: true, name: true, department: true } } },
+      include: {
+        assignee: { select: { id: true, name: true, department: true } },
+        _count: { select: { dependencies: true, blockedBy: true } },
+      },
     });
     return NextResponse.json(tasks);
   } catch (e) {

@@ -9,6 +9,7 @@ export async function GET() {
       include: {
         agent: { select: { id: true, name: true, department: true } },
         task: { select: { id: true, title: true } },
+        proposal: { select: { id: true, title: true, tier: true, status: true } },
       },
     });
     return NextResponse.json(approvals);
