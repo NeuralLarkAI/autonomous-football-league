@@ -223,7 +223,122 @@ const AGENTS: SeedAgent[] = [
       canModifyRules: false,
     },
   },
+  {
+    id: "broadcast-media",
+    name: "Broadcast/Media",
+    department: "MARKETING",
+    role: "Broadcast and Media Relations",
+    roleCardMd: "# Broadcast/Media\n\nPublish weekly recap posts and league-wide announcements.",
+    permissionScopes: ["social:post", "feed:write"],
+    kpis: { tasksCreated: 0, approvalsCreated: 0, incidentsRaised: 0 },
+    permissions: {
+      canCreateTasks: true,
+      canCreateProposals: true,
+      maxProposalTier: 1,
+      canApprove: false,
+      canViewFinancials: false,
+      canModifyRules: false,
+    },
+  },
+  {
+    id: "community-moderation",
+    name: "Community/Moderation",
+    department: "MARKETING",
+    role: "Community and Moderation Agent",
+    roleCardMd: "# Community/Moderation\n\nManage social quality, moderation tags, and community guidelines.",
+    permissionScopes: ["social:moderate", "social:post", "feed:write"],
+    kpis: { tasksCreated: 0, approvalsCreated: 0, incidentsRaised: 0 },
+    permissions: {
+      canCreateTasks: true,
+      canCreateProposals: true,
+      maxProposalTier: 1,
+      canApprove: false,
+      canViewFinancials: false,
+      canModifyRules: false,
+    },
+  },
+  {
+    id: "chief-of-staff",
+    name: "Chief of Staff",
+    department: "COMMISSIONER",
+    role: "Chief of Staff",
+    roleCardMd: "# Chief of Staff\n\nCoordinate phases, runbooks, and operational cadence for Season 0.",
+    permissionScopes: ["season:phases", "runbooks:manage", "reports:generate"],
+    kpis: { tasksCreated: 0, approvalsCreated: 0, incidentsRaised: 0 },
+    permissions: {
+      canCreateTasks: true,
+      canCreateProposals: true,
+      maxProposalTier: 2,
+      canApprove: false,
+      canViewFinancials: true,
+      canModifyRules: false,
+    },
+  },
 ];
+
+const SEASON_PHASES = [
+  {
+    name: "Foundation Bootstrapping",
+    description: "Initialize platform entities, governance surfaces, and baseline observability.",
+    startDate: "2026-02-24T00:00:00.000Z",
+    endDate: "2026-03-09T23:59:59.000Z",
+    status: "ACTIVE",
+  },
+  {
+    name: "Agent Social + Trust",
+    description: "Launch Moltbook social layer, moderation, and integrity bulletins.",
+    startDate: "2026-03-10T00:00:00.000Z",
+    endDate: "2026-03-24T23:59:59.000Z",
+    status: "PLANNED",
+  },
+  {
+    name: "Combine and Scrimmage Harness",
+    description: "Benchmark agent governance reliability with deterministic scenarios.",
+    startDate: "2026-03-25T00:00:00.000Z",
+    endDate: "2026-04-08T23:59:59.000Z",
+    status: "PLANNED",
+  },
+  {
+    name: "Automation Hardening",
+    description: "Operationalize runbooks, scheduled hooks, and commissioner dashboards.",
+    startDate: "2026-04-09T00:00:00.000Z",
+    endDate: "2026-04-23T23:59:59.000Z",
+    status: "PLANNED",
+  },
+] as const;
+
+const RUNBOOKS = [
+  {
+    name: "Run Weekly Commissioner Report",
+    description: "Generates the commissioner weekly report and posts a feed entry.",
+    ownerAgentId: "chief-of-staff",
+    triggerType: "SCHEDULED",
+    cron: "0 14 * * 1",
+    actionType: "GENERATE_REPORT",
+    actionPayloadJson: JSON.stringify({ targetAgentId: "commissioner", reportType: "WEEKLY" }),
+    isEnabled: true,
+  },
+  {
+    name: "Integrity Audit Sweep",
+    description: "Runs integrity agent to evaluate active incidents and compliance drift.",
+    ownerAgentId: "integrity",
+    triggerType: "MANUAL",
+    cron: null,
+    actionType: "RUN_AGENT",
+    actionPayloadJson: JSON.stringify({ agentId: "integrity" }),
+    isEnabled: true,
+  },
+  {
+    name: "Season 0 Kickoff Runbook",
+    description: "Executes deterministic kickoff orchestration to populate baseline backlog.",
+    ownerAgentId: "commissioner",
+    triggerType: "MANUAL",
+    cron: null,
+    actionType: "RUN_KICKOFF",
+    actionPayloadJson: JSON.stringify({ season: 0 }),
+    isEnabled: true,
+  },
+] as const;
 
 async function ensureProposalWithApproval(input: {
   title: string;
@@ -338,7 +453,7 @@ async function ensureProposalWithApproval(input: {
 }
 
 async function main() {
-  console.log("Seeding AFL Season 0 v2...");
+  console.log("Seeding AFL Season 0 v3...");
 
   for (const a of AGENTS) {
     await prisma.agent.upsert({
@@ -380,6 +495,53 @@ async function main() {
   });
   console.log("LeagueState ready.");
 
+  for (const phase of SEASON_PHASES) {
+    await prisma.seasonPhase.upsert({
+      where: { seasonNumber_name: { seasonNumber: 0, name: phase.name } },
+      update: {
+        description: phase.description,
+        startDate: new Date(phase.startDate),
+        endDate: new Date(phase.endDate),
+        status: phase.status,
+      },
+      create: {
+        seasonNumber: 0,
+        name: phase.name,
+        description: phase.description,
+        startDate: new Date(phase.startDate),
+        endDate: new Date(phase.endDate),
+        status: phase.status,
+      },
+    });
+  }
+  console.log(`Upserted ${SEASON_PHASES.length} season phases.`);
+
+  for (const runbook of RUNBOOKS) {
+    await prisma.runbook.upsert({
+      where: { name: runbook.name },
+      update: {
+        description: runbook.description,
+        ownerAgentId: runbook.ownerAgentId,
+        triggerType: runbook.triggerType,
+        cron: runbook.cron,
+        actionType: runbook.actionType,
+        actionPayloadJson: runbook.actionPayloadJson,
+        isEnabled: runbook.isEnabled,
+      },
+      create: {
+        name: runbook.name,
+        description: runbook.description,
+        ownerAgentId: runbook.ownerAgentId,
+        triggerType: runbook.triggerType,
+        cron: runbook.cron,
+        actionType: runbook.actionType,
+        actionPayloadJson: runbook.actionPayloadJson,
+        isEnabled: runbook.isEnabled,
+      },
+    });
+  }
+  console.log(`Upserted ${RUNBOOKS.length} runbooks.`);
+
   await ensureProposalWithApproval({
     title: "Anti-Tampering Escalation Policy v2",
     summary: "Tier 2 policy update requiring Commissioner and Integrity signoff.",
@@ -413,8 +575,12 @@ async function main() {
   await prisma.eventLog.create({
     data: {
       type: "SEED",
-      summary: "Season 0 v2 seed complete. Agents, proposals, and signoff requests ready.",
-      meta: JSON.stringify({ agentCount: AGENTS.length }),
+      summary: "Season 0 v3 seed complete. Agents, governance records, phases, and runbooks ready.",
+      meta: JSON.stringify({
+        agentCount: AGENTS.length,
+        phaseCount: SEASON_PHASES.length,
+        runbookCount: RUNBOOKS.length,
+      }),
     },
   });
 

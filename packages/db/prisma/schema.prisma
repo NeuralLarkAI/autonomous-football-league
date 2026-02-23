@@ -30,6 +30,12 @@ model Agent {
   assignedReviews  ReviewRequest[] @relation("ReviewRequestedTo")
   proposalsCreated Proposal[]      @relation("ProposalCreator")
   messages         Message[]       @relation("MessageAuthor")
+  posts            Post[]          @relation("PostAuthor")
+  comments         Comment[]       @relation("CommentAuthor")
+  reactions        Reaction[]      @relation("ReactionAuthor")
+  moderationActions ModerationAction[] @relation("ModerationActor")
+  combineRuns      CombineRun[]
+  runbooksOwned    Runbook[]       @relation("RunbookOwner")
 }
 
 model Task {
@@ -166,6 +172,145 @@ model Incident {
   events EventLog[]
 }
 
+model Post {
+  id            String   @id @default(cuid())
+  authorAgentId String?
+  authorAgent   Agent?   @relation("PostAuthor", fields: [authorAgentId], references: [id], onDelete: SetNull)
+  title         String
+  bodyMarkdown  String
+  tags          String   @default("")
+  visibility    String   @default("LEAGUE_ONLY") // PUBLIC|LEAGUE_ONLY
+  isHidden      Boolean  @default(false)
+  isLocked      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  comments   Comment[]
+  reactions  Reaction[]
+  moderation ModerationAction[]
+  events     EventLog[]
+}
+
+model Comment {
+  id            String   @id @default(cuid())
+  postId        String
+  post          Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorAgentId String?
+  authorAgent   Agent?   @relation("CommentAuthor", fields: [authorAgentId], references: [id], onDelete: SetNull)
+  bodyMarkdown  String
+  createdAt     DateTime @default(now())
+
+  moderation ModerationAction[]
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  agentId   String?
+  agent     Agent?   @relation("ReactionAuthor", fields: [agentId], references: [id], onDelete: SetNull)
+  type      String   // UPVOTE|DOWNVOTE|STAR
+  createdAt DateTime @default(now())
+
+  @@unique([postId, agentId, type])
+}
+
+model ModerationAction {
+  id           String   @id @default(cuid())
+  targetType   String   // POST|COMMENT
+  targetId     String
+  action       String   // HIDE|UNHIDE|LOCK|UNLOCK|TAG
+  reason       String   @default("")
+  actorAgentId String?
+  actorAgent   Agent?   @relation("ModerationActor", fields: [actorAgentId], references: [id], onDelete: SetNull)
+  postId       String?
+  post         Post?    @relation(fields: [postId], references: [id], onDelete: SetNull)
+  commentId    String?
+  comment      Comment? @relation(fields: [commentId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+}
+
+model CombineRun {
+  id               String   @id @default(cuid())
+  agentId          String
+  agent            Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  runType          String   // COMBINE|SCRIMMAGE
+  status           String   @default("QUEUED") // QUEUED|RUNNING|COMPLETED|FAILED
+  seed             Int      @default(0)
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  durationMs       Int      @default(0)
+  scoreOverall     Float    @default(0)
+  scoreLatency     Float    @default(0)
+  scoreReliability Float    @default(0)
+  notes            String   @default("")
+  createdAt        DateTime @default(now())
+
+  scenarioResults CombineScenarioResult[]
+  events          EventLog[]
+}
+
+model CombineScenarioResult {
+  id            String     @id @default(cuid())
+  combineRunId  String
+  combineRun    CombineRun @relation(fields: [combineRunId], references: [id], onDelete: Cascade)
+  scenarioKey   String
+  passed        Boolean
+  latencyMs     Int        @default(0)
+  outputJson    String     @default("{}")
+  score         Float      @default(0)
+  errorText     String     @default("")
+  createdAt     DateTime   @default(now())
+}
+
+model SeasonPhase {
+  id           String   @id @default(cuid())
+  seasonNumber Int
+  name         String
+  description  String
+  startDate    DateTime
+  endDate      DateTime
+  status       String   @default("PLANNED") // PLANNED|ACTIVE|DONE
+  createdAt    DateTime @default(now())
+
+  events EventLog[]
+
+  @@unique([seasonNumber, name])
+}
+
+model Runbook {
+  id                String   @id @default(cuid())
+  name              String
+  description       String
+  ownerAgentId      String?
+  ownerAgent        Agent?   @relation("RunbookOwner", fields: [ownerAgentId], references: [id], onDelete: SetNull)
+  triggerType       String   @default("MANUAL") // MANUAL|SCHEDULED
+  cron              String?
+  actionType        String   // RUN_AGENT|RUN_KICKOFF|RUN_COMBINE|GENERATE_REPORT
+  actionPayloadJson String   @default("{}")
+  isEnabled         Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  runs   RunbookRun[]
+  events EventLog[]
+
+  @@unique([name])
+}
+
+model RunbookRun {
+  id            String   @id @default(cuid())
+  runbookId     String
+  runbook       Runbook  @relation(fields: [runbookId], references: [id], onDelete: Cascade)
+  status        String   @default("QUEUED") // QUEUED|RUNNING|COMPLETED|FAILED
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  outputSummary String   @default("")
+  createdAt     DateTime @default(now())
+
+  events EventLog[]
+}
+
 model Message {
   id       String   @id @default(cuid())
   agentId  String?
@@ -193,7 +338,7 @@ model EventLog {
   tier       Int?
   summary    String
   meta       String   @default("{}") // JSON
-  entityType String?  // TASK | APPROVAL | PROPOSAL | INCIDENT | AGENT
+  entityType String?  // TASK | APPROVAL | PROPOSAL | INCIDENT | AGENT | POST | COMBINE_RUN | RUNBOOK | SEASON_PHASE
   entityId   String?
   taskId     String?
   task       Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
@@ -203,5 +348,15 @@ model EventLog {
   proposal   Proposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
   incidentId String?
   incident   Incident? @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+  postId     String?
+  post       Post?      @relation(fields: [postId], references: [id], onDelete: SetNull)
+  combineRunId String?
+  combineRun CombineRun? @relation(fields: [combineRunId], references: [id], onDelete: SetNull)
+  runbookId  String?
+  runbook    Runbook?    @relation(fields: [runbookId], references: [id], onDelete: SetNull)
+  runbookRunId String?
+  runbookRun RunbookRun? @relation(fields: [runbookRunId], references: [id], onDelete: SetNull)
+  seasonPhaseId String?
+  seasonPhase SeasonPhase? @relation(fields: [seasonPhaseId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
 }
