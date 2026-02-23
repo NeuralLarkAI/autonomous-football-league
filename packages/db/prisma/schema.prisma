@@ -476,6 +476,8 @@ model Runbook {
   events EventLog[]
 
   @@unique([name])
+  @@index([leagueId, isEnabled, triggerType, nextRunAt])
+  @@index([lockedAt])
 }
 
 model RunbookRun {
