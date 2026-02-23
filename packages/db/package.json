@@ -8,16 +8,17 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio",
-    "seed": "tsx src/seed.ts"
+    "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
+    "prisma:migrate": "dotenv -e .env -- prisma migrate dev --schema=./prisma/schema.prisma --name init",
+    "prisma:studio": "dotenv -e .env -- prisma studio --schema=./prisma/schema.prisma",
+    "seed": "dotenv -e .env -- tsx src/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.4.0",
     "@afl/core": "workspace:*"
   },
   "devDependencies": {
+    "dotenv-cli": "^7.4.0",
     "prisma": "^6.4.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.3"

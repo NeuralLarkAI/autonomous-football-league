@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Agent {
+  id          String   @id @default(cuid())
+  name        String
+  department  String
+  role        String
+  status      String   @default("ACTIVE") // ACTIVE | INACTIVE
+  permissions String   // JSON blob of AgentPermissions
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tasks     Task[]
+  approvals Approval[]
+  events    EventLog[]
+}
+
+model Task {
+  id               String   @id @default(cuid())
+  title            String
+  description      String   @default("")
+  status           String   @default("BACKLOG") // BACKLOG|IN_PROGRESS|REVIEW|DONE|BLOCKED
+  tier             Int      @default(1)
+  department       String
+  acceptanceCriteria String  @default("")
+  riskNotes        String   @default("")
+  testPlan         String   @default("")
+  rollbackPlan     String   @default("")
+  assigneeId       String?
+  assignee         Agent?   @relation(fields: [assigneeId], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  approvals Approval[]
+}
+
+model Approval {
+  id        String   @id @default(cuid())
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id])
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id])
+  tier      Int
+  summary   String
+  status    String   @default("PENDING") // PENDING|APPROVED|REJECTED|DEFERRED
+  signoffs  String   @default("[]") // JSON array of signoff agent IDs
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LeagueState {
+  id          String   @id @default("singleton")
+  season      Int      @default(0)
+  seasonLock  Boolean  @default(false)
+  phase       String   @default("PRE_SEASON")
+  updatedAt   DateTime @updatedAt
+}
+
+model EventLog {
+  id        String   @id @default(cuid())
+  agentId   String?
+  agent     Agent?   @relation(fields: [agentId], references: [id])
+  type      String   // AGENT_RUN | TASK_CREATED | APPROVAL_CREATED | APPROVED | REJECTED | SEASON_LOCK | KICKOFF | SEED
+  summary   String
+  meta      String   @default("{}") // JSON
+  createdAt DateTime @default(now())
+}

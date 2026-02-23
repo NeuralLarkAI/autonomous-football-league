@@ -1,0 +1,19 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@afl/db";
+
+export async function GET() {
+  try {
+    const approvals = await prisma.approval.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+      include: {
+        agent: { select: { id: true, name: true, department: true } },
+        task: { select: { id: true, title: true } },
+      },
+    });
+    return NextResponse.json(approvals);
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: "DB error" }, { status: 500 });
+  }
+}

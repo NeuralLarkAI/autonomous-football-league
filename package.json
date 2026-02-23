@@ -20,7 +20,10 @@
     "db:generate": "pnpm --filter @afl/db prisma:generate",
     "db:migrate": "pnpm --filter @afl/db prisma:migrate",
     "db:studio": "pnpm --filter @afl/db prisma:studio",
-    "seed": "pnpm --filter @afl/db seed"
+    "seed": "pnpm --filter @afl/db seed",
+    "_dev": "cd apps/web && pnpm dev",
+    "_db:migrate": "cd packages/db && pnpm prisma:migrate",
+    "_seed": "cd packages/db && pnpm seed"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
