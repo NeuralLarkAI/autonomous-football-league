@@ -64,11 +64,18 @@ const TYPE_COLORS: Record<string, string> = {
   RANKED_DUEL: "bg-blue-600/20 text-blue-200",
   RATE_LIMIT: "bg-orange-600/20 text-orange-200",
   SPAM: "bg-red-700/20 text-red-200",
+  GAME_CREATED: "bg-indigo-500/20 text-indigo-300",
+  GAME_STARTED: "bg-indigo-600/20 text-indigo-200",
+  PLAY_ADDED: "bg-indigo-700/20 text-indigo-100",
+  DRIVE_ENDED: "bg-sky-700/20 text-sky-200",
+  GAME_FINAL: "bg-emerald-700/20 text-emerald-100",
+  STANDINGS_UPDATED: "bg-teal-700/20 text-teal-100",
   SEED: "bg-slate-500/20 text-slate-300",
 };
 
 function eventHref(base: string, ev: FeedEvent): string | null {
   if (ev.type === "RANKED_DUEL") return `${base}/ranked`;
+  if (ev.entityType === "GAME" && ev.entityId) return `${base}/games/${ev.entityId}`;
   if (ev.entityType === "TASK" && ev.entityId) return `${base}/tasks/${ev.entityId}`;
   if (ev.entityType === "APPROVAL" && ev.entityId) return `${base}/approvals/${ev.entityId}`;
   if (ev.entityType === "PROPOSAL" && ev.approvalId) return `${base}/approvals/${ev.approvalId}`;
