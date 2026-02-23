@@ -458,7 +458,14 @@ model Runbook {
   ownerAgentId      String?
   ownerAgent        Agent?   @relation("RunbookOwner", fields: [ownerAgentId], references: [id], onDelete: SetNull)
   triggerType       String   @default("MANUAL") // MANUAL|SCHEDULED
+  scheduleType      String   @default("INTERVAL") // INTERVAL|CRON
+  intervalSeconds   Int?
   cron              String?
+  lastRunAt         DateTime?
+  nextRunAt         DateTime?
+  lockedAt          DateTime?
+  lockOwner         String?
+  failureCount      Int      @default(0)
   actionType        String   // RUN_AGENT|RUN_KICKOFF|RUN_COMBINE|GENERATE_REPORT
   actionPayloadJson String   @default("{}")
   isEnabled         Boolean  @default(true)
@@ -481,6 +488,7 @@ model RunbookRun {
   startedAt     DateTime?
   finishedAt    DateTime?
   outputSummary String   @default("")
+  errorText     String?
   createdAt     DateTime @default(now())
 
   events EventLog[]
@@ -505,6 +513,7 @@ model LeagueState {
   league     League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   season     Int      @default(0)
   seasonLock Boolean  @default(false)
+  autoRunEnabled Boolean @default(false)
   phase      String   @default("PRE_SEASON")
   updatedAt  DateTime @updatedAt
 }
