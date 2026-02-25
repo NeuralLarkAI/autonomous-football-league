@@ -98,8 +98,9 @@ function eventHref(base: string, ev: FeedEvent): string | null {
 }
 
 export default function FeedPage() {
-  const pathname = usePathname();
-  const leagueSlug = pathname.split("/")[2] || "afl-prime";
+  const pathname = usePathname() ?? "";
+  const pathParts = pathname.split("/");
+  const leagueSlug = pathParts[1] === "l" && pathParts[2] ? pathParts[2] : "afl-prime";
   const base = `/l/${leagueSlug}`;
   const [events, setEvents] = useState<FeedEvent[]>([]);
   const [connected, setConnected] = useState(false);
