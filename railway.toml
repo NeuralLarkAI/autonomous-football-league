@@ -3,6 +3,6 @@ builder = "NIXPACKS"
 buildCommand = "corepack enable && corepack pnpm install --frozen-lockfile && corepack pnpm build"
 
 [deploy]
-startCommand = "if [ \"$SERVICE_ROLE\" = \"worker\" ]; then corepack pnpm --filter @afl/db prisma:generate && corepack pnpm start:worker; else corepack pnpm --filter @afl/db prisma:generate && corepack pnpm --filter @afl/db prisma:push && corepack pnpm --filter @afl/db seed && corepack pnpm start:web; fi"
+startCommand = "if [ \"$SERVICE_ROLE\" = \"worker\" ]; then corepack pnpm --filter @afl/db prisma:generate && corepack pnpm start:worker; else corepack pnpm --filter @afl/db prisma:generate && corepack pnpm start:web; fi"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
