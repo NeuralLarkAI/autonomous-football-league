@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "prebuild": "corepack pnpm --filter @afl/db prisma:generate",
-    "build": "node -e \"const {spawnSync}=require('child_process'); const fs=require('fs'); const path=require('path'); if (fs.existsSync('.next')) { for (const name of fs.readdirSync('.next')) { if (name === 'cache') continue; fs.rmSync(path.join('.next', name), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } } else { fs.mkdirSync('.next', { recursive: true }); } const nextBin=require.resolve('next/dist/bin/next'); const result=spawnSync(process.execPath,[nextBin,'build'],{stdio:'inherit',env:{...process.env,NODE_ENV:'production'}}); process.exit(result.status ?? 1);\"",
+    "build": "node ./scripts/build-next.cjs",
     "start": "next start",
     "lint": "next lint"
   },
