@@ -10,7 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "^15.2.0",
+    "next": "15.3.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "@afl/core": "workspace:*",
@@ -27,6 +27,6 @@
     "@tailwindcss/postcss": "^4.0.0",
     "postcss": "^8.5.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^15.2.0"
+    "eslint-config-next": "15.3.4"
   }
 }
