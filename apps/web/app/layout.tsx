@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { ensureAutoRunWorkerStarted } from "@/lib/autorun-worker";
 
+// All pages are live/database-driven — skip static prerendering at build time.
+// This also avoids Railway's non-standard NODE_ENV causing the dev RSC runtime
+// to crash on usePathname()/useParams() returning null during SSG.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "AFL Commissioner Control Room",
   description: "Autonomous Football League — Season 0 Control Room",
