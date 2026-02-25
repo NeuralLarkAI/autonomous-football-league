@@ -334,7 +334,7 @@ const RUNBOOKS = [
     cron: null,
     actionType: "GENERATE_REPORT",
     actionPayloadJson: JSON.stringify({ targetAgentId: "commissioner", reportType: "WEEKLY" }),
-    isEnabled: false,
+    isEnabled: true,
   },
   {
     name: "Weekly Integrity Audit",
@@ -346,7 +346,7 @@ const RUNBOOKS = [
     cron: null,
     actionType: "RUN_AGENT",
     actionPayloadJson: JSON.stringify({ agentId: "integrity" }),
-    isEnabled: false,
+    isEnabled: true,
   },
   {
     name: "Weekly Combine",
@@ -358,7 +358,7 @@ const RUNBOOKS = [
     cron: null,
     actionType: "RUN_COMBINE",
     actionPayloadJson: JSON.stringify({ agentId: "rankings", runType: "COMBINE", seed: 70 }),
-    isEnabled: false,
+    isEnabled: true,
   },
   {
     name: "Weekly Broadcast Recap",
@@ -370,7 +370,7 @@ const RUNBOOKS = [
     cron: null,
     actionType: "GENERATE_REPORT",
     actionPayloadJson: JSON.stringify({ targetAgentId: "broadcast-media", reportType: "WEEKLY_RECAP" }),
-    isEnabled: false,
+    isEnabled: true,
   },
   {
     name: "Ops Health Check",
@@ -382,7 +382,7 @@ const RUNBOOKS = [
     cron: null,
     actionType: "RUN_AGENT",
     actionPayloadJson: JSON.stringify({ agentId: "sre" }),
-    isEnabled: false,
+    isEnabled: true,
   },
   {
     name: "Season 0 Kickoff Runbook",
@@ -716,13 +716,13 @@ async function main() {
 
   await prisma.leagueState.upsert({
     where: { id: "singleton" },
-    update: { leagueId: DEFAULT_LEAGUE_ID },
+    update: { leagueId: DEFAULT_LEAGUE_ID, autoRunEnabled: true },
     create: {
       id: "singleton",
       leagueId: DEFAULT_LEAGUE_ID,
       season: 0,
       seasonLock: false,
-      autoRunEnabled: false,
+      autoRunEnabled: true,
       phase: "PRE_SEASON",
     },
   });
@@ -752,6 +752,9 @@ async function main() {
   console.log(`Upserted ${SEASON_PHASES.length} season phases.`);
 
   for (const runbook of RUNBOOKS) {
+    // On update: only refresh metadata — never reset timing/lock fields the worker manages.
+    // On create: initialize nextRunAt immediately for enabled scheduled runbooks.
+    const isScheduled = runbook.triggerType === "SCHEDULED";
     await prisma.runbook.upsert({
       where: { name: runbook.name },
       update: {
@@ -762,11 +765,6 @@ async function main() {
         scheduleType: runbook.scheduleType,
         intervalSeconds: runbook.intervalSeconds ?? null,
         cron: runbook.cron,
-        lastRunAt: null,
-        nextRunAt: null,
-        lockedAt: null,
-        lockOwner: null,
-        failureCount: 0,
         actionType: runbook.actionType,
         actionPayloadJson: runbook.actionPayloadJson,
         isEnabled: runbook.isEnabled,
@@ -781,7 +779,7 @@ async function main() {
         intervalSeconds: runbook.intervalSeconds ?? null,
         cron: runbook.cron,
         lastRunAt: null,
-        nextRunAt: null,
+        nextRunAt: isScheduled && runbook.isEnabled ? new Date() : null,
         lockedAt: null,
         lockOwner: null,
         failureCount: 0,
@@ -792,6 +790,18 @@ async function main() {
     });
   }
   console.log(`Upserted ${RUNBOOKS.length} runbooks.`);
+
+  // Ensure any already-seeded scheduled runbooks that are enabled have nextRunAt set
+  // (handles live Railway instances where records exist with null nextRunAt).
+  await prisma.runbook.updateMany({
+    where: {
+      leagueId: DEFAULT_LEAGUE_ID,
+      triggerType: "SCHEDULED",
+      isEnabled: true,
+      nextRunAt: null,
+    },
+    data: { nextRunAt: new Date() },
+  });
 
   const knownAgentIds = new Set(
     (await prisma.agent.findMany({

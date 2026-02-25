@@ -2,7 +2,7 @@ import { prisma } from "@afl/db";
 import { TASK_TEMPLATES } from "./tasks";
 import { SEASON0_AGENT_DELIVERABLES } from "./season0-deliverables";
 import type { AgentRunObservedCounts, AgentRunOutputRefs, AgentRunResult } from "./types";
-import { generateAgentNarrative, hasClaudeAgentBrain } from "./ai";
+import { generateAgentNarrative, generateCommissionerDecision, hasClaudeAgentBrain } from "./ai";
 
 type SeasonOneChecklistItem = {
   key: string;
@@ -371,46 +371,124 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
       eventsCreated += 1;
     }
 
-    if (season) {
-      const [openTasks, pendingApprovals, openIncidents, pendingRunbooks] = await Promise.all([
+    // Commissioner AI decision-making runs for ALL seasons (0 and 1+), not just Season 1.
+    const [openTasks, pendingApprovals, openIncidents, scheduledRunbooks, pendingProposals, recentIncidents, pendingApprovalItems] =
+      await Promise.all([
         prisma.task.count({
           where: { leagueId, status: { in: ["BACKLOG", "IN_PROGRESS", "REVIEW", "BLOCKED"] } },
         }),
         prisma.approval.count({ where: { leagueId, status: "PENDING" } }),
         prisma.incident.count({ where: { leagueId, status: { not: "RESOLVED" } } }),
         prisma.runbook.count({ where: { leagueId, triggerType: "SCHEDULED", isEnabled: true } }),
+        prisma.proposal.findMany({
+          where: { leagueId, status: "PENDING" },
+          select: { id: true, title: true, tier: true, summary: true },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+        }),
+        prisma.incident.findMany({
+          where: { leagueId, status: { not: "RESOLVED" } },
+          select: { id: true, title: true, severity: true },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+        }),
+        prisma.approval.findMany({
+          where: { leagueId, status: "PENDING", tier: { lte: 1 } },
+          select: { id: true, summary: true, tier: true },
+          orderBy: { createdAt: "asc" },
+          take: 5,
+        }),
       ]);
-      const aiNarrative = await generateAgentNarrative({
-        agentName: "Commissioner",
-        goal: "Publish an operational notice for league readiness and next actions.",
-        context: [
-          `Season: ${season.seasonNumber}`,
-          `Open tasks: ${openTasks}`,
-          `Pending approvals: ${pendingApprovals}`,
-          `Open incidents: ${openIncidents}`,
-          `Enabled scheduled runbooks: ${pendingRunbooks}`,
-          "Keep this commissioner note practical and execution focused.",
-        ].join("\n"),
-      });
 
-      if (aiNarrative) {
-        await prisma.eventLog.create({
-          data: {
-            leagueId,
-            agentId,
-            type: "AGENT_AI_THOUGHT",
-            summary: "Commissioner generated AI-assisted operations narrative.",
-            entityType: "AGENT",
-            entityId: agentId,
-            meta: JSON.stringify({
-              provider: "anthropic",
-              mode: "commissioner_notice",
-              seasonNumber: season.seasonNumber,
-            }),
-          },
-        });
-        eventsCreated += 1;
-      } else if (hasClaudeAgentBrain()) {
+    const seasonNumber = season?.seasonNumber ?? 0;
+
+    const decision = await generateCommissionerDecision({
+      season: seasonNumber,
+      openTasks,
+      pendingApprovals,
+      openIncidents,
+      scheduledRunbooks,
+      pendingProposals,
+      recentIncidents,
+      pendingApprovalItems,
+    });
+
+    if (decision) {
+      await prisma.eventLog.create({
+        data: {
+          leagueId,
+          agentId,
+          type: "AGENT_AI_THOUGHT",
+          summary: `Commissioner AI decision: health=${decision.leagueHealthScore}/100. ${decision.summary}`,
+          entityType: "AGENT",
+          entityId: agentId,
+          meta: JSON.stringify({
+            provider: "anthropic",
+            mode: "commissioner_decision",
+            seasonNumber,
+            leagueHealthScore: decision.leagueHealthScore,
+            actionCount: decision.recommendedActions.length,
+          }),
+        },
+      });
+      eventsCreated += 1;
+
+      // Act on recommended actions from Claude
+      for (const rec of decision.recommendedActions) {
+        if (rec.action === "APPROVE_APPROVAL" && rec.targetId) {
+          // Auto-approve Tier 0/1 items the commissioner decides are safe
+          const approval = await prisma.approval.findUnique({ where: { id: rec.targetId } });
+          if (approval && approval.status === "PENDING" && approval.tier <= 1) {
+            await prisma.approval.update({
+              where: { id: rec.targetId },
+              data: { status: "APPROVED" },
+            });
+            await prisma.eventLog.create({
+              data: {
+                leagueId,
+                agentId,
+                type: "APPROVAL_CREATED",
+                tier: approval.tier,
+                summary: `Commissioner AI auto-approved Tier ${approval.tier} item: ${approval.summary}`,
+                entityType: "APPROVAL",
+                entityId: rec.targetId,
+                meta: JSON.stringify({ aiReason: rec.reason, priority: rec.priority }),
+              },
+            });
+            eventsCreated += 1;
+          }
+        }
+
+        if (rec.action === "FLAG_INCIDENT" && rec.targetId) {
+          // Log a flag event for incidents the commissioner highlights
+          await prisma.eventLog.create({
+            data: {
+              leagueId,
+              agentId,
+              type: "INCIDENT_CREATED",
+              summary: `Commissioner AI flagged incident for review: ${rec.reason}`,
+              entityType: "INCIDENT",
+              entityId: rec.targetId,
+              meta: JSON.stringify({ aiReason: rec.reason, priority: rec.priority }),
+            },
+          });
+          eventsCreated += 1;
+        }
+      }
+
+      // Publish commissioner operational notice powered by Claude's narrative
+      await emitSocialPost({
+        leagueId,
+        agentId,
+        title: `Commissioner Notice - Season ${seasonNumber} Operations`,
+        bodyMarkdown: decision.narrative,
+        tags: ["commissioner", `season${seasonNumber}`, "operations"],
+        visibility: "PUBLIC",
+      });
+      eventsCreated += 1;
+    } else {
+      // Fallback: no Claude API or call failed
+      if (hasClaudeAgentBrain()) {
         await prisma.eventLog.create({
           data: {
             leagueId,
@@ -419,20 +497,22 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
             summary: "Commissioner AI call failed; used deterministic fallback notice.",
             entityType: "AGENT",
             entityId: agentId,
-            meta: JSON.stringify({ provider: "anthropic", mode: "commissioner_notice" }),
+            meta: JSON.stringify({ provider: "anthropic", mode: "commissioner_decision" }),
           },
         });
         eventsCreated += 1;
       }
 
+      const fallbackBody = season
+        ? `Season ${season.seasonNumber} operations active. Open tasks: ${openTasks}. Pending approvals: ${pendingApprovals}. Open incidents: ${openIncidents}. Use runbooks for setup validation and weekly simulations.`
+        : `Season 0 governance in progress. Open tasks: ${openTasks}. Pending approvals: ${pendingApprovals}. Open incidents: ${openIncidents}. Run the Season 0 Kickoff runbook to populate the baseline backlog.`;
+
       await emitSocialPost({
         leagueId,
         agentId,
-        title: `Commissioner Notice - Season ${season.seasonNumber} Operations`,
-        bodyMarkdown:
-          aiNarrative ??
-          "Season 1 operations are active. Use runbooks for setup validation and weekly simulations to preserve deterministic replayability.",
-        tags: ["commissioner", "season1", "operations"],
+        title: `Commissioner Notice - Season ${seasonNumber} Operations`,
+        bodyMarkdown: fallbackBody,
+        tags: ["commissioner", `season${seasonNumber}`, "operations"],
         visibility: "PUBLIC",
       });
       eventsCreated += 1;
