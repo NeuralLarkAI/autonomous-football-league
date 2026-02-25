@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
+    "prisma:generate": "node -e \"const { spawnSync } = require('child_process'); const env = { ...process.env }; if (!/^postgres(ql)?:\\/\\//.test(env.DATABASE_URL || '')) { env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/postgres?schema=public'; } const prismaBin = require.resolve('prisma/build/index.js'); const result = spawnSync(process.execPath, [prismaBin, 'generate', '--schema=./prisma/schema.prisma'], { stdio: 'inherit', env }); process.exit(result.status ?? 1);\"",
     "prisma:migrate": "dotenv -e .env -- prisma migrate dev --schema=./prisma/schema.prisma --name init",
     "prisma:migrate:deploy": "prisma migrate deploy --schema=./prisma/schema.prisma",
     "prisma:push": "prisma db push --schema=./prisma/schema.prisma",
