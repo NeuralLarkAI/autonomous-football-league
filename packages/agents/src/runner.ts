@@ -2,7 +2,13 @@ import { prisma } from "@afl/db";
 import { TASK_TEMPLATES } from "./tasks";
 import { SEASON0_AGENT_DELIVERABLES } from "./season0-deliverables";
 import type { AgentRunObservedCounts, AgentRunOutputRefs, AgentRunResult } from "./types";
-import { generateAgentNarrative, generateCommissionerDecision, hasClaudeAgentBrain } from "./ai";
+import {
+  generateAgentNarrative,
+  generateChiefOfStaffTaskIdeas,
+  generateCommissionerDecision,
+  hasClaudeAgentBrain,
+  hasOpenAIAgentBrain,
+} from "./ai";
 
 type SeasonOneChecklistItem = {
   key: string;
@@ -86,6 +92,35 @@ const SEASON_ONE_CHECKLIST: SeasonOneChecklistItem[] = [
   },
 ];
 
+function fallbackChiefOfStaffIdeas(count: number, season: number): Array<{
+  title: string;
+  description: string;
+  department: string;
+  tier: number;
+  acceptanceCriteria: string;
+  riskNotes: string;
+  testPlan: string;
+  rollbackPlan: string;
+}> {
+  const base = Date.now();
+  const depts = ["COMMISSIONER", "TECHNOLOGY", "FOOTBALL_OPS", "SECURITY", "LEGAL_COMPLIANCE", "MARKETING"] as const;
+  const ideas = [];
+  for (let i = 0; i < count; i += 1) {
+    const n = i + 1;
+    ideas.push({
+      title: `Autonomous Ops Backlog S${season} #${base + n}`,
+      description: "Chief of Staff generated autonomous backlog work item to maintain continuous league operations throughput.",
+      department: depts[i % depts.length],
+      tier: i % 3 === 0 ? 2 : 1,
+      acceptanceCriteria: "Execution evidence is logged in feed and all downstream dependencies are identified.",
+      riskNotes: "Deferred execution may reduce weekly operational continuity.",
+      testPlan: "Execute task workflow and verify status transitions plus event log emission.",
+      rollbackPlan: "Move task back to BACKLOG and rerun impacted runbook.",
+    });
+  }
+  return ideas;
+}
+
 async function ensureTaskDependency(leagueId: string, taskId: string, dependsOnTaskId: string) {
   await prisma.taskDependency.upsert({
     where: { taskId_dependsOnTaskId: { taskId, dependsOnTaskId } },
@@ -156,6 +191,104 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
       },
     });
     eventsCreated += 1;
+
+    const minOpenTasks = Math.max(4, Number(process.env.AFL_MIN_OPEN_TASKS ?? 18));
+    const [openTasks, pendingApprovals, openIncidents] = await Promise.all([
+      prisma.task.count({
+        where: { leagueId, status: { in: ["BACKLOG", "IN_PROGRESS", "REVIEW", "BLOCKED"] } },
+      }),
+      prisma.approval.count({ where: { leagueId, status: "PENDING" } }),
+      prisma.incident.count({ where: { leagueId, status: { not: "RESOLVED" } } }),
+    ]);
+
+    if (openTasks < minOpenTasks) {
+      const desired = Math.min(6, minOpenTasks - openTasks);
+      const season = (await prisma.leagueState.findFirst({ where: { leagueId }, select: { season: true } }))?.season ?? 0;
+      let generatedBy = "fallback";
+      let ideas =
+        (await generateChiefOfStaffTaskIdeas({
+          season,
+          openTasks,
+          pendingApprovals,
+          openIncidents,
+          desiredCount: desired,
+        })) ?? [];
+      if (ideas.length === 0) {
+        ideas = fallbackChiefOfStaffIdeas(desired, season);
+      } else {
+        generatedBy = "openai";
+      }
+
+      if (generatedBy === "openai") {
+        await prisma.eventLog.create({
+          data: {
+            leagueId,
+            agentId,
+            type: "AGENT_AI_THOUGHT",
+            summary: `Chief of Staff generated ${ideas.length} backlog task idea(s) with OpenAI assist.`,
+            entityType: "AGENT",
+            entityId: agentId,
+            meta: JSON.stringify({ provider: "openai", mode: "chief_of_staff_backlog_refill", desired, openTasks, minOpenTasks }),
+          },
+        });
+        eventsCreated += 1;
+      } else if (hasOpenAIAgentBrain()) {
+        await prisma.eventLog.create({
+          data: {
+            leagueId,
+            agentId,
+            type: "AGENT_AI_FALLBACK",
+            summary: "Chief of Staff OpenAI planning fallback used for backlog refill.",
+            entityType: "AGENT",
+            entityId: agentId,
+            meta: JSON.stringify({ provider: "openai", mode: "chief_of_staff_backlog_refill", desired }),
+          },
+        });
+        eventsCreated += 1;
+      }
+
+      let backlogRefillCreated = 0;
+      for (const idea of ideas) {
+        const dedupe = await prisma.task.findFirst({
+          where: { leagueId, title: idea.title },
+          select: { id: true },
+        });
+        if (dedupe) continue;
+
+        await prisma.task.create({
+          data: {
+            leagueId,
+            title: idea.title,
+            description: idea.description,
+            department: idea.department,
+            tier: idea.tier,
+            status: "BACKLOG",
+            assigneeId: agentId,
+            acceptanceCriteria: idea.acceptanceCriteria,
+            riskNotes: idea.riskNotes,
+            testPlan: idea.testPlan,
+            rollbackPlan: idea.rollbackPlan,
+          },
+        });
+        tasksCreated += 1;
+        backlogRefillCreated += 1;
+      }
+
+      if (backlogRefillCreated > 0) {
+        await prisma.eventLog.create({
+          data: {
+            leagueId,
+            agentId,
+            type: "TASK_CREATED",
+            summary: `Chief of Staff autonomous backlog refill created ${backlogRefillCreated} task(s).`,
+            entityType: "AGENT",
+            entityId: agentId,
+            meta: JSON.stringify({ generatedBy, minOpenTasks, openTasksBefore: openTasks, created: backlogRefillCreated }),
+          },
+        });
+        eventsCreated += 1;
+      }
+    }
   }
 
   if (agentId === "scheduler") {

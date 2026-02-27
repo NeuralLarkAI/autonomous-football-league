@@ -4,6 +4,17 @@ type AgentNarrativeInput = {
   context: string;
 };
 
+export type ChiefOfStaffTaskIdea = {
+  title: string;
+  description: string;
+  department: string;
+  tier: number;
+  acceptanceCriteria: string;
+  riskNotes: string;
+  testPlan: string;
+  rollbackPlan: string;
+};
+
 export type CommissionerRecommendedAction = {
   action: "APPROVE_APPROVAL" | "FLAG_INCIDENT" | "TRIGGER_RUNBOOK" | "CREATE_NOTICE";
   targetId?: string;
@@ -35,8 +46,18 @@ function getClaudeConfig() {
   return { apiKey, model };
 }
 
+function getOpenAIConfig() {
+  const apiKey = process.env.OPENAI_API_KEY ?? "";
+  const model = process.env.OPENAI_MODEL_CHIEF_OF_STAFF ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+  return { apiKey, model };
+}
+
 export function hasClaudeAgentBrain(): boolean {
   return Boolean(getClaudeConfig().apiKey);
+}
+
+export function hasOpenAIAgentBrain(): boolean {
+  return Boolean(getOpenAIConfig().apiKey);
 }
 
 async function callClaude(
@@ -82,6 +103,56 @@ async function callClaude(
     return text || null;
   } catch (error) {
     console.error("[agents][claude] request error", error);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callOpenAI(
+  systemPrompt: string,
+  userContent: string,
+  maxTokens: number,
+  temperature: number,
+  timeoutMs = 20_000
+): Promise<string | null> {
+  const { apiKey, model } = getOpenAIConfig();
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature,
+        max_completion_tokens: maxTokens,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[agents][openai] request failed ${response.status}: ${errText.slice(0, 300)}`);
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string | null } }>;
+    };
+    const text = data.choices?.[0]?.message?.content?.trim();
+    return text || null;
+  } catch (error) {
+    console.error("[agents][openai] request error", error);
     return null;
   } finally {
     clearTimeout(timeout);
@@ -177,6 +248,74 @@ Rules for recommendedActions:
     return parsed;
   } catch (err) {
     console.error("[agents][claude] commissioner decision JSON parse failed:", err);
+    return null;
+  }
+}
+
+export async function generateChiefOfStaffTaskIdeas(input: {
+  season: number;
+  openTasks: number;
+  pendingApprovals: number;
+  openIncidents: number;
+  desiredCount: number;
+}): Promise<ChiefOfStaffTaskIdea[] | null> {
+  const raw = await callOpenAI(
+    "You are Chief of Staff for an autonomous football league operations team. Output only strict JSON with practical operational tasks.",
+    `Generate ${input.desiredCount} new backlog tasks.
+
+Current state:
+- season: ${input.season}
+- openTasks: ${input.openTasks}
+- pendingApprovals: ${input.pendingApprovals}
+- openIncidents: ${input.openIncidents}
+
+Return ONLY JSON array where each item is:
+{
+  "title": string,
+  "description": string,
+  "department": "COMMISSIONER" | "TECHNOLOGY" | "SECURITY" | "LEGAL_COMPLIANCE" | "FOOTBALL_OPS" | "MARKETING",
+  "tier": 1 | 2,
+  "acceptanceCriteria": string,
+  "riskNotes": string,
+  "testPlan": string,
+  "rollbackPlan": string
+}
+
+Rules:
+- Create work that keeps operations moving now.
+- Avoid duplicates and avoid fictional references.
+- Keep each field concise and actionable.`,
+    900,
+    0.2,
+    25_000
+  );
+
+  if (!raw) return null;
+
+  try {
+    const cleaned = raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) return null;
+    const ideas = parsed
+      .map((item) => {
+        const department = String(item?.department ?? "COMMISSIONER");
+        const tier = Number(item?.tier ?? 1);
+        return {
+          title: String(item?.title ?? "").trim(),
+          description: String(item?.description ?? "").trim(),
+          department,
+          tier: tier >= 2 ? 2 : 1,
+          acceptanceCriteria: String(item?.acceptanceCriteria ?? "").trim(),
+          riskNotes: String(item?.riskNotes ?? "").trim(),
+          testPlan: String(item?.testPlan ?? "").trim(),
+          rollbackPlan: String(item?.rollbackPlan ?? "").trim(),
+        } as ChiefOfStaffTaskIdea;
+      })
+      .filter((idea) => idea.title && idea.description && idea.acceptanceCriteria && idea.testPlan);
+
+    return ideas.slice(0, Math.max(0, input.desiredCount));
+  } catch (error) {
+    console.error("[agents][openai] chief-of-staff JSON parse failed:", error);
     return null;
   }
 }
