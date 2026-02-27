@@ -29,7 +29,9 @@
     "_seed": "cd packages/db && corepack pnpm seed",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "smoke:external-ui": "powershell -ExecutionPolicy Bypass -File ./scripts/smoke-external-ui.ps1",
+    "qa:phase0": "corepack pnpm --filter @afl/web exec tsc --noEmit && corepack pnpm smoke:external-ui"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

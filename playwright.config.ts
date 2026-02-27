@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.E2E_BASE_URL ?? "https://aflweb-production.up.railway.app";
+const baseURL = process.env.E2E_BASE_URL ?? "https://afl-web-production-c5fe.up.railway.app";
 
 export default defineConfig({
   testDir: "./tests/e2e",

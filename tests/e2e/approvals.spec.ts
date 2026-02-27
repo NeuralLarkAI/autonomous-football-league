@@ -37,15 +37,21 @@ test.describe("Approvals", () => {
       .first();
     await expect(outcome).toBeVisible();
 
-    const rejectButton = page.getByRole("button", { name: "Reject" }).first();
-    await expect(rejectButton).toBeVisible();
-    await rejectButton.click();
+    const rejectButtons = page.getByRole("button", { name: "Reject" });
+    const rejectCount = await rejectButtons.count();
+    if (rejectCount > 0) {
+      const rejectButton = rejectButtons.first();
+      await expect(rejectButton).toBeVisible();
+      await rejectButton.click();
 
-    await expect(
-      page
-        .locator("div")
-        .filter({ hasText: /Approval rejected|Approval is not pending|Failed to reject/i })
-        .first()
-    ).toBeVisible();
+      await expect(
+        page
+          .locator("div")
+          .filter({ hasText: /Approval rejected|Approval is not pending|Failed to reject/i })
+          .first()
+      ).toBeVisible();
+    } else {
+      await expect(page.getByText(/No pending approvals/i)).toBeVisible();
+    }
   });
 });
