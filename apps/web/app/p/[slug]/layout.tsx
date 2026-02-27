@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Bebas_Neue, Rajdhani } from "next/font/google";
+import { TokenContractBanner } from "@/components/external/token-contract-banner";
 
 const displayFont = Bebas_Neue({ subsets: ["latin"], weight: "400" });
 const bodyFont = Rajdhani({ subsets: ["latin"], weight: ["400", "500", "600", "700"] });
@@ -46,6 +47,7 @@ export default async function PublicLeagueLayout({
         </div>
       </header>
       <main className="external-grid-bg">{children}</main>
+      <TokenContractBanner />
     </div>
   );
 }
