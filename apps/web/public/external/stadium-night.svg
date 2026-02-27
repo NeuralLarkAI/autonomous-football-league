@@ -1,0 +1,31 @@
+<svg width="1280" height="840" viewBox="0 0 1280 840" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="640" y1="0" x2="640" y2="840" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A1B36"/>
+      <stop offset="1" stop-color="#030A16"/>
+    </linearGradient>
+    <linearGradient id="field" x1="640" y1="420" x2="640" y2="790" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A3A31"/>
+      <stop offset="1" stop-color="#05231E"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="840" fill="url(#sky)"/>
+  <ellipse cx="640" cy="215" rx="390" ry="90" fill="#27D3C9" fill-opacity="0.15"/>
+  <path d="M95 450L640 295L1185 450V700L640 810L95 700V450Z" fill="url(#field)" stroke="#1AE2D5" stroke-opacity="0.35" stroke-width="3"/>
+  <path d="M640 320V800" stroke="#8BE7DE" stroke-opacity="0.45" stroke-width="4"/>
+  <path d="M185 520L1095 520" stroke="#8BE7DE" stroke-opacity="0.25" stroke-width="3"/>
+  <path d="M165 595L1115 595" stroke="#8BE7DE" stroke-opacity="0.2" stroke-width="2.5"/>
+  <path d="M145 665L1135 665" stroke="#8BE7DE" stroke-opacity="0.16" stroke-width="2"/>
+  <path d="M290 435L290 760" stroke="#8BE7DE" stroke-opacity="0.15" stroke-width="2"/>
+  <path d="M990 435L990 760" stroke="#8BE7DE" stroke-opacity="0.15" stroke-width="2"/>
+  <path d="M95 450L640 295L1185 450" stroke="#56F2E5" stroke-opacity="0.5" stroke-width="3"/>
+  <rect x="32" y="96" width="224" height="106" rx="12" fill="#030C1A" stroke="#36E4D7" stroke-opacity="0.45"/>
+  <text x="58" y="142" fill="#BDFCF8" font-family="Verdana, sans-serif" font-size="34" font-weight="700">AFL</text>
+  <text x="58" y="174" fill="#87E5DB" font-family="Verdana, sans-serif" font-size="18">LIVE NETWORK</text>
+  <g opacity="0.8">
+    <circle cx="70" cy="365" r="8" fill="#8AF4EA"/>
+    <circle cx="1210" cy="365" r="8" fill="#8AF4EA"/>
+    <circle cx="150" cy="335" r="6" fill="#8AF4EA"/>
+    <circle cx="1130" cy="335" r="6" fill="#8AF4EA"/>
+  </g>
+</svg>

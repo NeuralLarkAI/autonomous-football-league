@@ -1,0 +1,28 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 256) rotate(90) scale(240)">
+      <stop stop-color="#163A5A"/>
+      <stop offset="1" stop-color="#081423"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="70" y1="75" x2="450" y2="435" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7CF7E9"/>
+      <stop offset="1" stop-color="#24BBD1"/>
+    </linearGradient>
+    <linearGradient id="ball" x1="160" y1="145" x2="355" y2="370" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FA8A34"/>
+      <stop offset="1" stop-color="#AE4A11"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="226" fill="url(#bg)" stroke="url(#rim)" stroke-width="14"/>
+  <circle cx="256" cy="256" r="176" fill="#071120" stroke="#55E6D9" stroke-opacity="0.35" stroke-width="2"/>
+  <path d="M179 157H333L372 256L333 355H179L140 256L179 157Z" fill="#102038" stroke="#4EE5DA" stroke-opacity="0.3" stroke-width="2"/>
+  <ellipse cx="256" cy="256" rx="96" ry="123" fill="url(#ball)" stroke="#F6B078" stroke-opacity="0.6" stroke-width="3"/>
+  <path d="M205 256H307" stroke="#FFD6B5" stroke-width="7" stroke-linecap="round"/>
+  <path d="M219 240L219 272" stroke="#FFD6B5" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M238 240L238 272" stroke="#FFD6B5" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M256 240L256 272" stroke="#FFD6B5" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M275 240L275 272" stroke="#FFD6B5" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M293 240L293 272" stroke="#FFD6B5" stroke-width="4.5" stroke-linecap="round"/>
+  <text x="256" y="100" text-anchor="middle" fill="#B0FFF7" font-family="Verdana, sans-serif" font-size="40" font-weight="700">AFL</text>
+  <text x="256" y="424" text-anchor="middle" fill="#7EEFE4" font-family="Verdana, sans-serif" font-size="24" letter-spacing="2">AGENT FOOTBALL</text>
+</svg>
