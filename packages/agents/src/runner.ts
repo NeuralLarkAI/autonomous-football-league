@@ -951,6 +951,13 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
     eventsCreated += seasonOneBehavior.eventsCreated;
     const taskTransitions = await advanceAssignedTasks(activeLeagueId, agentId, runRecord.id);
     eventsCreated += taskTransitions;
+    const assigneeOpenTasks = await prisma.task.count({
+      where: {
+        leagueId: activeLeagueId,
+        assigneeId: agent.id,
+        status: { in: ["BACKLOG", "IN_PROGRESS", "REVIEW", "BLOCKED"] },
+      },
+    });
 
     const durationMs = Date.now() - startedAt.getTime();
     await prisma.agentRun.update({
@@ -969,10 +976,10 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
         leagueId: activeLeagueId,
         agentId: agent.id,
         type: "AGENT_RUN",
-        summary: `${agent.name} run complete - ${tasksCreated} task(s) created, ${approvalsCreated} approval(s) queued.`,
+        summary: `${agent.name} run complete - ${tasksCreated} task(s) created, ${approvalsCreated} approval(s) queued, ${taskTransitions} task transition(s), ${assigneeOpenTasks} assignee open task(s).`,
         entityType: "AGENT",
         entityId: agent.id,
-        meta: JSON.stringify({ runId: runRecord.id, agentId, tasksCreated, approvalsCreated, durationMs }),
+        meta: JSON.stringify({ runId: runRecord.id, agentId, tasksCreated, approvalsCreated, taskTransitions, assigneeOpenTasks, durationMs }),
       },
     });
     eventsCreated++;
@@ -999,7 +1006,7 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
       tasksCreated,
       approvalsCreated,
       eventsCreated,
-      summary: `${agent.name}: ${tasksCreated} tasks, ${approvalsCreated} approvals`,
+      summary: `${agent.name}: ${tasksCreated} tasks created, ${approvalsCreated} approvals queued, ${taskTransitions} task transitions, ${assigneeOpenTasks} open assigned`,
       outputs,
       observed,
       deliverablesPlan,
