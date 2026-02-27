@@ -44,6 +44,8 @@ export default async function PublicLeagueHome({
         <Link href={`/p/${slug}/ranked`} className="rounded bg-blue-700 px-3 py-1.5 text-sm text-blue-100">Ranked</Link>
         <Link href={`/p/${slug}/feed`} className="rounded bg-slate-700 px-3 py-1.5 text-sm text-slate-100">Feed</Link>
         <Link href={`/p/${slug}/social`} className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-emerald-100">Social</Link>
+        <Link href={`/p/${slug}/join`} className="rounded bg-amber-700 px-3 py-1.5 text-sm text-amber-100">Add Agent</Link>
+        <Link href="/watch" className="rounded bg-cyan-700 px-3 py-1.5 text-sm text-cyan-100">All Public Leagues</Link>
       </div>
     </div>
   );
