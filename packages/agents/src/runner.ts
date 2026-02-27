@@ -1,14 +1,46 @@
+import { createHash } from "node:crypto";
 import { prisma } from "@afl/db";
 import { TASK_TEMPLATES } from "./tasks";
 import { SEASON0_AGENT_DELIVERABLES } from "./season0-deliverables";
 import type { AgentRunObservedCounts, AgentRunOutputRefs, AgentRunResult } from "./types";
 import {
-  generateAgentNarrative,
   generateChiefOfStaffTaskIdeas,
   generateCommissionerDecision,
   hasClaudeAgentBrain,
   hasOpenAIAgentBrain,
 } from "./ai";
+
+type PlannerMode = "chief_of_staff_backlog_refill" | "commissioner_decision";
+
+function sha256Hex(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}
+
+function safeJsonParse<T>(raw: string): T | null {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function getLastPlannerSignature(leagueId: string, agentId: string, mode: PlannerMode) {
+  const modeMatch = `"mode":"${mode}"`;
+  const last = await prisma.eventLog.findFirst({
+    where: {
+      leagueId,
+      agentId,
+      type: { in: ["AGENT_AI_THOUGHT", "AGENT_AI_FALLBACK", "AGENT_AI_SKIPPED"] },
+      meta: { contains: modeMatch },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true, meta: true, type: true },
+  });
+  if (!last) return null;
+  const parsed = safeJsonParse<{ signature?: unknown }>(last.meta);
+  const signature = typeof parsed?.signature === "string" ? parsed.signature : null;
+  return { createdAt: last.createdAt, signature, type: last.type };
+}
 
 type SeasonOneChecklistItem = {
   key: string;
@@ -204,19 +236,46 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
     if (openTasks < minOpenTasks) {
       const desired = Math.min(6, minOpenTasks - openTasks);
       const season = (await prisma.leagueState.findFirst({ where: { leagueId }, select: { season: true } }))?.season ?? 0;
-      let generatedBy = "fallback";
-      let ideas =
-        (await generateChiefOfStaffTaskIdeas({
-          season,
-          openTasks,
-          pendingApprovals,
-          openIncidents,
-          desiredCount: desired,
-        })) ?? [];
+
+      const openAiEnabled = process.env.AFL_CHIEF_OF_STAFF_OPENAI_ENABLED !== "false";
+      const openAiMinIntervalSeconds = Math.max(0, Number(process.env.AFL_CHIEF_OF_STAFF_AI_MIN_INTERVAL_SECONDS ?? 1800));
+      const lastPlanner = await getLastPlannerSignature(leagueId, agentId, "chief_of_staff_backlog_refill");
+      const secondsSinceLast = lastPlanner ? (Date.now() - lastPlanner.createdAt.getTime()) / 1000 : Number.POSITIVE_INFINITY;
+      const withinInterval = secondsSinceLast < openAiMinIntervalSeconds;
+      const signature = sha256Hex(
+        JSON.stringify({ season, openTasks, pendingApprovals, openIncidents, desired, minOpenTasks })
+      );
+
+      let generatedBy: "openai" | "fallback" | "throttled_fallback" = "fallback";
+      let attemptedOpenAI = false;
+      let ideas: Array<{
+        title: string;
+        description: string;
+        department: string;
+        tier: number;
+        acceptanceCriteria: string;
+        riskNotes: string;
+        testPlan: string;
+        rollbackPlan: string;
+      }> = [];
+
+      if (openAiEnabled && hasOpenAIAgentBrain() && !withinInterval) {
+        attemptedOpenAI = true;
+        ideas =
+          (await generateChiefOfStaffTaskIdeas({
+            season,
+            openTasks,
+            pendingApprovals,
+            openIncidents,
+            desiredCount: desired,
+          })) ?? [];
+        if (ideas.length > 0) generatedBy = "openai";
+      } else if (openAiEnabled && hasOpenAIAgentBrain() && withinInterval) {
+        generatedBy = "throttled_fallback";
+      }
+
       if (ideas.length === 0) {
         ideas = fallbackChiefOfStaffIdeas(desired, season);
-      } else {
-        generatedBy = "openai";
       }
 
       if (generatedBy === "openai") {
@@ -228,20 +287,36 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
             summary: `Chief of Staff generated ${ideas.length} backlog task idea(s) with OpenAI assist.`,
             entityType: "AGENT",
             entityId: agentId,
-            meta: JSON.stringify({ provider: "openai", mode: "chief_of_staff_backlog_refill", desired, openTasks, minOpenTasks }),
+            meta: JSON.stringify({
+              provider: "openai",
+              mode: "chief_of_staff_backlog_refill",
+              signature,
+              desired,
+              openTasks,
+              minOpenTasks,
+              attempted: attemptedOpenAI,
+            }),
           },
         });
         eventsCreated += 1;
-      } else if (hasOpenAIAgentBrain()) {
+      } else if (attemptedOpenAI && hasOpenAIAgentBrain()) {
         await prisma.eventLog.create({
           data: {
             leagueId,
             agentId,
             type: "AGENT_AI_FALLBACK",
-            summary: "Chief of Staff OpenAI planning fallback used for backlog refill.",
+            summary: "Chief of Staff OpenAI planning call returned no ideas; used deterministic fallback for backlog refill.",
             entityType: "AGENT",
             entityId: agentId,
-            meta: JSON.stringify({ provider: "openai", mode: "chief_of_staff_backlog_refill", desired }),
+            meta: JSON.stringify({
+              provider: "openai",
+              mode: "chief_of_staff_backlog_refill",
+              signature,
+              desired,
+              openTasks,
+              minOpenTasks,
+              attempted: attemptedOpenAI,
+            }),
           },
         });
         eventsCreated += 1;
@@ -283,7 +358,15 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
             summary: `Chief of Staff autonomous backlog refill created ${backlogRefillCreated} task(s).`,
             entityType: "AGENT",
             entityId: agentId,
-            meta: JSON.stringify({ generatedBy, minOpenTasks, openTasksBefore: openTasks, created: backlogRefillCreated }),
+            meta: JSON.stringify({
+              generatedBy,
+              signature,
+              minOpenTasks,
+              openTasksBefore: openTasks,
+              created: backlogRefillCreated,
+              openAiMinIntervalSeconds,
+              secondsSinceLastOpenAiAttempt: Number.isFinite(secondsSinceLast) ? Math.round(secondsSinceLast) : null,
+            }),
           },
         });
         eventsCreated += 1;
@@ -535,16 +618,81 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
 
     const seasonNumber = season?.seasonNumber ?? 0;
 
-    const decision = await generateCommissionerDecision({
-      season: seasonNumber,
-      openTasks,
-      pendingApprovals,
-      openIncidents,
-      scheduledRunbooks,
-      pendingProposals,
-      recentIncidents,
-      pendingApprovalItems,
-    });
+    const claudeEnabled = process.env.AFL_COMMISSIONER_CLAUDE_ENABLED !== "false";
+    const claudeMinIntervalSeconds = Math.max(0, Number(process.env.AFL_COMMISSIONER_AI_MIN_INTERVAL_SECONDS ?? 1800));
+    const claudeRequireSignal = process.env.AFL_COMMISSIONER_AI_REQUIRE_SIGNAL !== "false";
+    const claudeStateChangeOnly = process.env.AFL_COMMISSIONER_AI_STATE_CHANGE_ONLY !== "false";
+    const logSkips = process.env.AFL_AI_LOG_SKIPS === "true";
+
+    const commissionerSignature = sha256Hex(
+      JSON.stringify({
+        seasonNumber,
+        pendingApprovals,
+        pendingProposals: pendingProposals.map((p) => ({ id: p.id, tier: p.tier })),
+        recentIncidents: recentIncidents.map((i) => ({ id: i.id, severity: i.severity })),
+        pendingApprovalItems: pendingApprovalItems.map((a) => ({ id: a.id, tier: a.tier })),
+      })
+    );
+
+    const lastDecision = await getLastPlannerSignature(leagueId, agentId, "commissioner_decision");
+    const secondsSinceLastDecision = lastDecision ? (Date.now() - lastDecision.createdAt.getTime()) / 1000 : Number.POSITIVE_INFINITY;
+    const withinDecisionInterval = secondsSinceLastDecision < claudeMinIntervalSeconds;
+    const decisionStateUnchanged = lastDecision?.signature === commissionerSignature;
+
+    const hasDecisionSignal =
+      pendingApprovals > 0 || pendingProposals.length > 0 || recentIncidents.length > 0 || pendingApprovalItems.length > 0;
+
+    const attemptedClaude =
+      claudeEnabled &&
+      hasClaudeAgentBrain() &&
+      (!claudeRequireSignal || hasDecisionSignal) &&
+      !withinDecisionInterval &&
+      (!claudeStateChangeOnly || !decisionStateUnchanged);
+
+    const decision = attemptedClaude
+      ? await generateCommissionerDecision({
+          season: seasonNumber,
+          openTasks,
+          pendingApprovals,
+          openIncidents,
+          scheduledRunbooks,
+          pendingProposals,
+          recentIncidents,
+          pendingApprovalItems,
+        })
+      : null;
+
+    if (!attemptedClaude && logSkips && claudeEnabled && hasClaudeAgentBrain()) {
+      const reason = !hasDecisionSignal
+        ? "no_signal"
+        : withinDecisionInterval
+          ? "throttle"
+          : decisionStateUnchanged
+            ? "no_state_change"
+            : "gated";
+      await prisma.eventLog.create({
+        data: {
+          leagueId,
+          agentId,
+          type: "AGENT_AI_SKIPPED",
+          summary: `Commissioner AI skipped (${reason}).`,
+          entityType: "AGENT",
+          entityId: agentId,
+          meta: JSON.stringify({
+            provider: "anthropic",
+            mode: "commissioner_decision",
+            signature: commissionerSignature,
+            reason,
+            claudeMinIntervalSeconds,
+            secondsSinceLastDecision: Number.isFinite(secondsSinceLastDecision) ? Math.round(secondsSinceLastDecision) : null,
+            stateChangeOnly: claudeStateChangeOnly,
+            requireSignal: claudeRequireSignal,
+            hasSignal: hasDecisionSignal,
+          }),
+        },
+      });
+      eventsCreated += 1;
+    }
 
     if (decision) {
       await prisma.eventLog.create({
@@ -558,9 +706,11 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
           meta: JSON.stringify({
             provider: "anthropic",
             mode: "commissioner_decision",
+            signature: commissionerSignature,
             seasonNumber,
             leagueHealthScore: decision.leagueHealthScore,
             actionCount: decision.recommendedActions.length,
+            attempted: attemptedClaude,
           }),
         },
       });
@@ -621,7 +771,7 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
       eventsCreated += 1;
     } else {
       // Fallback: no Claude API or call failed
-      if (hasClaudeAgentBrain()) {
+      if (attemptedClaude && hasClaudeAgentBrain()) {
         await prisma.eventLog.create({
           data: {
             leagueId,
@@ -630,7 +780,12 @@ async function runSeasonOneAgentBehaviors(leagueId: string, agentId: string): Pr
             summary: "Commissioner AI call failed; used deterministic fallback notice.",
             entityType: "AGENT",
             entityId: agentId,
-            meta: JSON.stringify({ provider: "anthropic", mode: "commissioner_decision" }),
+            meta: JSON.stringify({
+              provider: "anthropic",
+              mode: "commissioner_decision",
+              signature: commissionerSignature,
+              attempted: attemptedClaude,
+            }),
           },
         });
         eventsCreated += 1;
