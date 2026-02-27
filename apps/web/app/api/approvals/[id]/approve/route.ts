@@ -28,7 +28,8 @@ export async function POST(
       );
     }
 
-    if (existing.proposalId && existing.tier >= 2) {
+    const enforceSignoffs = process.env.AFL_ENFORCE_SIGNOFFS === "1";
+    if (existing.proposalId && existing.tier >= 2 && enforceSignoffs) {
       const signoffs = await prisma.signoff.findMany({ where: { proposalId: existing.proposalId } });
       const approved = new Set(signoffs.filter((s) => s.status === "APPROVED").map((s) => s.agentId));
       const required = requiredByTier(existing.tier);
@@ -39,6 +40,23 @@ export async function POST(
           { status: 409 }
         );
       }
+    }
+
+    if (existing.proposalId && existing.tier >= 2 && !enforceSignoffs) {
+      await prisma.signoff.upsert({
+        where: { proposalId_agentId: { proposalId: existing.proposalId, agentId: "commissioner" } },
+        update: {
+          status: "APPROVED",
+          comment: "Commissioner override approval executed from Approvals queue.",
+        },
+        create: {
+          leagueId: existing.leagueId,
+          proposalId: existing.proposalId,
+          agentId: "commissioner",
+          status: "APPROVED",
+          comment: "Commissioner override approval executed from Approvals queue.",
+        },
+      });
     }
 
     const approval = await prisma.approval.update({
@@ -57,7 +75,7 @@ export async function POST(
         entityId: id,
         approvalId: id,
         proposalId: approval.proposalId ?? undefined,
-        meta: JSON.stringify({ approvalId: id, tier: approval.tier }),
+        meta: JSON.stringify({ approvalId: id, tier: approval.tier, signoffPolicy: enforceSignoffs ? "strict" : "commissioner_override" }),
       },
     });
 
