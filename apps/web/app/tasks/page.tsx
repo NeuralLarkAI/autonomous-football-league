@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -41,10 +41,20 @@ export default function TasksPage() {
   const load = () =>
     fetch("/api/tasks")
       .then((r) => r.json())
-      .then((d) => { setTasks(Array.isArray(d) ? d : []); setLoading(false); })
+      .then((d) => {
+        setTasks(Array.isArray(d) ? d : []);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(load, 10000);
+    return () => clearInterval(timer);
+  }, []);
 
   const updateStatus = async (id: string, status: TaskStatus) => {
     setUpdating(id);
@@ -58,7 +68,12 @@ export default function TasksPage() {
   };
 
   if (loading) {
-    return <div className="space-y-4"><h1 className="text-2xl font-bold text-slate-100">Tasks</h1><p className="text-slate-400">Loading…</p></div>;
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold text-slate-100">Tasks</h1>
+        <p className="text-slate-400">Loading...</p>
+      </div>
+    );
   }
 
   if (tasks.length === 0) {
@@ -84,51 +99,41 @@ export default function TasksPage() {
         {COLUMNS.map((col) => {
           const colTasks = byStatus(col.key);
           return (
-            <div
-              key={col.key}
-              className={`min-w-[240px] flex-shrink-0 rounded-xl border-t-2 bg-slate-800/40 p-3 ${col.color}`}
-            >
+            <div key={col.key} className={`min-w-[240px] flex-shrink-0 rounded-xl border-t-2 bg-slate-800/40 p-3 ${col.color}`}>
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-sm font-semibold text-slate-200">{col.label}</span>
-                <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-400">
-                  {colTasks.length}
-                </span>
+                <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-400">{colTasks.length}</span>
               </div>
               <div className="space-y-2">
                 {colTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="rounded-lg border border-slate-700/60 bg-slate-900/60 p-3 space-y-2"
-                  >
+                  <div key={task.id} className="space-y-2 rounded-lg border border-slate-700/60 bg-slate-900/60 p-3">
                     <div className="flex items-start gap-2">
                       <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-bold ${TIER_COLORS[task.tier] ?? TIER_COLORS[1]}`}>
                         T{task.tier}
                       </span>
-                      <Link href={`/tasks/${task.id}`} className="text-xs font-medium text-slate-200 leading-snug hover:underline">
+                      <Link href={`/tasks/${task.id}`} className="text-xs font-medium leading-snug text-slate-200 hover:underline">
                         {task.title}
                       </Link>
                     </div>
-                    {task.assignee && (
-                      <p className="text-xs text-slate-500">→ {task.assignee.name}</p>
-                    )}
+                    {task.assignee && <p className="text-xs text-slate-500">-&gt; {task.assignee.name}</p>}
                     <p className="text-[11px] text-slate-500">
-                      Depends on: {task._count?.dependencies ?? 0} · Blocked by: {task._count?.blockedBy ?? 0}
+                      Depends on: {task._count?.dependencies ?? 0} | Blocked by: {task._count?.blockedBy ?? 0}
                     </p>
                     <select
                       disabled={updating === task.id}
                       value={task.status}
                       onChange={(e) => updateStatus(task.id, e.target.value as TaskStatus)}
-                      className="w-full rounded bg-slate-800 border border-slate-600 text-xs text-slate-300 px-2 py-1 disabled:opacity-50"
+                      className="w-full rounded border border-slate-600 bg-slate-800 px-2 py-1 text-xs text-slate-300 disabled:opacity-50"
                     >
                       {COLUMNS.map((c) => (
-                        <option key={c.key} value={c.key}>{c.label}</option>
+                        <option key={c.key} value={c.key}>
+                          {c.label}
+                        </option>
                       ))}
                     </select>
                   </div>
                 ))}
-                {colTasks.length === 0 && (
-                  <p className="text-xs text-slate-600 text-center py-4">Empty</p>
-                )}
+                {colTasks.length === 0 && <p className="py-4 text-center text-xs text-slate-600">Empty</p>}
               </div>
             </div>
           );

@@ -555,6 +555,92 @@ async function emitSocialPost(input: {
   return { post, eventLog };
 }
 
+type TaskLifecycleStatus = "BACKLOG" | "IN_PROGRESS" | "REVIEW" | "DONE" | "BLOCKED";
+
+async function transitionTaskStatus(input: {
+  leagueId: string;
+  agentId: string;
+  runId: string;
+  taskId: string;
+  from: TaskLifecycleStatus;
+  to: TaskLifecycleStatus;
+  reason: string;
+}) {
+  if (input.from === input.to) return false;
+  await prisma.task.update({
+    where: { id: input.taskId },
+    data: { status: input.to },
+  });
+  await prisma.eventLog.create({
+    data: {
+      leagueId: input.leagueId,
+      agentId: input.agentId,
+      type: "TASK_UPDATED",
+      summary: `Task status moved ${input.from} -> ${input.to} (${input.reason}).`,
+      entityType: "TASK",
+      entityId: input.taskId,
+      taskId: input.taskId,
+      meta: JSON.stringify({ runId: input.runId, from: input.from, to: input.to, reason: input.reason }),
+    },
+  });
+  return true;
+}
+
+async function advanceAssignedTasks(leagueId: string, agentId: string, runId: string): Promise<number> {
+  const tasks = await prisma.task.findMany({
+    where: { leagueId, assigneeId: agentId, status: { in: ["BACKLOG", "IN_PROGRESS", "REVIEW", "BLOCKED"] } },
+    orderBy: [{ tier: "desc" }, { createdAt: "asc" }],
+    take: 8,
+    select: { id: true, status: true },
+  });
+  let moved = 0;
+
+  for (const task of tasks) {
+    if (moved >= 3) break;
+
+    const [unmetDeps, pendingApprovals] = await Promise.all([
+      prisma.taskDependency.count({
+        where: { taskId: task.id, dependsOnTask: { status: { not: "DONE" } } },
+      }),
+      prisma.approval.count({ where: { taskId: task.id, status: "PENDING" } }),
+    ]);
+
+    let next: TaskLifecycleStatus | null = null;
+    let reason = "";
+    if (task.status === "BACKLOG" && unmetDeps === 0) {
+      next = "IN_PROGRESS";
+      reason = "dependencies satisfied";
+    } else if (task.status === "BLOCKED" && unmetDeps === 0) {
+      next = "IN_PROGRESS";
+      reason = "unblocked";
+    } else if (task.status === "IN_PROGRESS" && unmetDeps === 0) {
+      next = "REVIEW";
+      reason = pendingApprovals > 0 ? "awaiting approvals" : "implementation complete";
+    } else if (task.status === "REVIEW" && unmetDeps === 0 && pendingApprovals === 0) {
+      next = "DONE";
+      reason = "review checks passed";
+    } else if ((task.status === "BACKLOG" || task.status === "IN_PROGRESS") && unmetDeps > 0) {
+      next = "BLOCKED";
+      reason = "dependency not done";
+    }
+
+    if (next) {
+      const didMove = await transitionTaskStatus({
+        leagueId,
+        agentId,
+        runId,
+        taskId: task.id,
+        from: task.status as TaskLifecycleStatus,
+        to: next,
+        reason,
+      });
+      if (didMove) moved += 1;
+    }
+  }
+
+  return moved;
+}
+
 async function runSocialBehaviors(
   leagueId: string,
   agentId: string,
@@ -863,6 +949,8 @@ export async function runAgent(agentId: string, leagueId?: string): Promise<Agen
     const seasonOneBehavior = await runSeasonOneAgentBehaviors(activeLeagueId, agentId);
     tasksCreated += seasonOneBehavior.tasksCreated;
     eventsCreated += seasonOneBehavior.eventsCreated;
+    const taskTransitions = await advanceAssignedTasks(activeLeagueId, agentId, runRecord.id);
+    eventsCreated += taskTransitions;
 
     const durationMs = Date.now() - startedAt.getTime();
     await prisma.agentRun.update({

@@ -5,6 +5,7 @@ const prisma = new PrismaClient();
 const DEFAULT_LEAGUE_ID = "league_afl_prime";
 const DEFAULT_USER_ID = "user_commissioner_dev";
 const DEV_PASSWORD_HASH = crypto.createHash("sha256").update("afl_pw:dev-password").digest("hex");
+const INCLUDE_DEMO_ARTIFACTS = process.env.AFL_INCLUDE_DEMO_ARTIFACTS === "1";
 
 type SeedAgent = {
   id: string;
@@ -358,7 +359,7 @@ const RUNBOOKS = [
     cron: null,
     actionType: "RUN_COMBINE",
     actionPayloadJson: JSON.stringify({ agentId: "rankings", runType: "COMBINE", seed: 70 }),
-    isEnabled: true,
+    isEnabled: false,
   },
   {
     name: "Weekly Broadcast Recap",
@@ -444,6 +445,23 @@ const RUNBOOKS = [
     actionPayloadJson: JSON.stringify({ weekNumber: 1 }),
     isEnabled: true,
   },
+] as const;
+
+const AGENT_WORK_CYCLE_AGENT_IDS = [
+  "commissioner",
+  "architect",
+  "security",
+  "integrity",
+  "program-manager",
+  "backend-engineer",
+  "qa-engineer",
+  "sre",
+  "rules-committee",
+  "scheduler",
+  "rankings",
+  "broadcast-media",
+  "community-moderation",
+  "chief-of-staff",
 ] as const;
 
 const SEASON1_ENGINE_VERSION = "engine@0.1.0";
@@ -791,6 +809,44 @@ async function main() {
   }
   console.log(`Upserted ${RUNBOOKS.length} runbooks.`);
 
+  for (const agentId of AGENT_WORK_CYCLE_AGENT_IDS) {
+    const name = `Auto Agent Cycle: ${agentId}`;
+    await prisma.runbook.upsert({
+      where: { name },
+      update: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        description: `Auto-run ${agentId} work cycle to keep tasks and outputs moving.`,
+        ownerAgentId: agentId,
+        triggerType: "SCHEDULED",
+        scheduleType: "INTERVAL",
+        intervalSeconds: 300,
+        cron: null,
+        actionType: "RUN_AGENT",
+        actionPayloadJson: JSON.stringify({ agentId }),
+        isEnabled: true,
+      },
+      create: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        name,
+        description: `Auto-run ${agentId} work cycle to keep tasks and outputs moving.`,
+        ownerAgentId: agentId,
+        triggerType: "SCHEDULED",
+        scheduleType: "INTERVAL",
+        intervalSeconds: 300,
+        cron: null,
+        lastRunAt: null,
+        nextRunAt: new Date(),
+        lockedAt: null,
+        lockOwner: null,
+        failureCount: 0,
+        actionType: "RUN_AGENT",
+        actionPayloadJson: JSON.stringify({ agentId }),
+        isEnabled: true,
+      },
+    });
+  }
+  console.log(`Upserted ${AGENT_WORK_CYCLE_AGENT_IDS.length} auto agent cycle runbooks.`);
+
   // Ensure any already-seeded scheduled runbooks that are enabled have nextRunAt set
   // (handles live Railway instances where records exist with null nextRunAt).
   await prisma.runbook.updateMany({
@@ -925,181 +981,205 @@ async function main() {
   }
   console.log(`Upserted Season 1 schedule with ${gameCount} games across ${weekPairings.length} weeks.`);
 
-  await prisma.agentRegistration.upsert({
-    where: { claimCode: "AFL-DEMO-CLAIM" },
-    update: {
-      leagueId: DEFAULT_LEAGUE_ID,
-      agentName: "Demo External Agent",
-      description: "Seeded pending registration for connect flow smoke testing.",
-      requestedScopes: JSON.stringify(["social:write", "combine:run", "feed:read"]),
-      mode: "EXTERNAL",
-      status: "PENDING",
-      registrationToken: "seed_demo_registration_token",
-      expiresAt: new Date("2026-12-31T23:59:59.000Z"),
-    },
-    create: {
-      leagueId: DEFAULT_LEAGUE_ID,
-      agentName: "Demo External Agent",
-      description: "Seeded pending registration for connect flow smoke testing.",
-      requestedScopes: JSON.stringify(["social:write", "combine:run", "feed:read"]),
-      mode: "EXTERNAL",
-      status: "PENDING",
-      registrationToken: "seed_demo_registration_token",
-      claimCode: "AFL-DEMO-CLAIM",
-      expiresAt: new Date("2026-12-31T23:59:59.000Z"),
-    },
-  });
+  if (INCLUDE_DEMO_ARTIFACTS) {
+    await prisma.agentRegistration.upsert({
+      where: { claimCode: "AFL-DEMO-CLAIM" },
+      update: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        agentName: "Demo External Agent",
+        description: "Seeded pending registration for connect flow smoke testing.",
+        requestedScopes: JSON.stringify(["social:write", "combine:run", "feed:read"]),
+        mode: "EXTERNAL",
+        status: "PENDING",
+        registrationToken: "seed_demo_registration_token",
+        expiresAt: new Date("2026-12-31T23:59:59.000Z"),
+      },
+      create: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        agentName: "Demo External Agent",
+        description: "Seeded pending registration for connect flow smoke testing.",
+        requestedScopes: JSON.stringify(["social:write", "combine:run", "feed:read"]),
+        mode: "EXTERNAL",
+        status: "PENDING",
+        registrationToken: "seed_demo_registration_token",
+        claimCode: "AFL-DEMO-CLAIM",
+        expiresAt: new Date("2026-12-31T23:59:59.000Z"),
+      },
+    });
 
-  const seededSubmission = await prisma.agentSubmission.upsert({
-    where: {
-      agentId_version: {
+    const seededSubmission = await prisma.agentSubmission.upsert({
+      where: {
+        agentId_version: {
+          agentId: "architect",
+          version: 1,
+        },
+      },
+      update: {
+        leagueId: DEFAULT_LEAGUE_ID,
+        status: "COMBINE_PENDING",
+        entryFile: "index.js",
+        checksum: "seed_architect_v1_checksum",
+        sizeBytes: 256,
+      },
+      create: {
+        leagueId: DEFAULT_LEAGUE_ID,
         agentId: "architect",
         version: 1,
+        status: "COMBINE_PENDING",
+        entryFile: "index.js",
+        checksum: "seed_architect_v1_checksum",
+        sizeBytes: 256,
       },
-    },
-    update: {
-      leagueId: DEFAULT_LEAGUE_ID,
-      status: "COMBINE_PENDING",
-      entryFile: "index.js",
-      checksum: "seed_architect_v1_checksum",
-      sizeBytes: 256,
-    },
-    create: {
-      leagueId: DEFAULT_LEAGUE_ID,
-      agentId: "architect",
-      version: 1,
-      status: "COMBINE_PENDING",
-      entryFile: "index.js",
-      checksum: "seed_architect_v1_checksum",
-      sizeBytes: 256,
-    },
-  });
+    });
 
-  const submissionArtifact = await prisma.submissionArtifact.findFirst({
-    where: {
-      submissionId: seededSubmission.id,
-      filePath: ".data/uploads/league_afl_prime/architect/1/index.js",
-    },
-  });
-
-  if (!submissionArtifact) {
-    await prisma.submissionArtifact.create({
-      data: {
-        leagueId: DEFAULT_LEAGUE_ID,
+    const submissionArtifact = await prisma.submissionArtifact.findFirst({
+      where: {
         submissionId: seededSubmission.id,
         filePath: ".data/uploads/league_afl_prime/architect/1/index.js",
       },
     });
-  }
 
-  const submissionValidation = await prisma.validationResult.findFirst({
-    where: {
-      submissionId: seededSubmission.id,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+    if (!submissionArtifact) {
+      await prisma.submissionArtifact.create({
+        data: {
+          leagueId: DEFAULT_LEAGUE_ID,
+          submissionId: seededSubmission.id,
+          filePath: ".data/uploads/league_afl_prime/architect/1/index.js",
+        },
+      });
+    }
 
-  if (!submissionValidation) {
-    await prisma.validationResult.create({
-      data: {
-        leagueId: DEFAULT_LEAGUE_ID,
+    const submissionValidation = await prisma.validationResult.findFirst({
+      where: {
         submissionId: seededSubmission.id,
-        ok: true,
-        errorsJson: "[]",
-        warningsJson: JSON.stringify(["Seed artifact created for v5 submission workflow smoke tests."]),
       },
+      orderBy: { createdAt: "desc" },
     });
-  }
 
-  await ensureProposalWithApproval({
-    leagueId: DEFAULT_LEAGUE_ID,
-    title: "Anti-Tampering Escalation Policy v2",
-    summary: "Tier 2 policy update requiring Commissioner and Integrity signoff.",
-    tier: 2,
-    changeType: "POLICY",
-    affectedArea: "LEGAL_COMPLIANCE",
-    beforeJson: JSON.stringify({ escalationWindowHours: 24, autoFreeze: false }),
-    afterJson: JSON.stringify({ escalationWindowHours: 12, autoFreeze: true }),
-    risk: "False positives could increase operational friction.",
-    testPlan: "Replay 10 historical incidents against new policy thresholds.",
-    rollbackPlan: "Restore prior escalation window and disable auto-freeze.",
-    requiredSignoffs: ["commissioner", "integrity"],
-    creatorAgentId: "integrity",
-  });
+    if (!submissionValidation) {
+      await prisma.validationResult.create({
+        data: {
+          leagueId: DEFAULT_LEAGUE_ID,
+          submissionId: seededSubmission.id,
+          ok: true,
+          errorsJson: "[]",
+          warningsJson: JSON.stringify(["Seed artifact created for v5 submission workflow smoke tests."]),
+        },
+      });
+    }
 
-  await ensureProposalWithApproval({
-    leagueId: DEFAULT_LEAGUE_ID,
-    title: "Scoring Engine Weight Matrix v2",
-    summary: "Tier 3 scoring change requiring Commissioner, Integrity, and Security signoff.",
-    tier: 3,
-    changeType: "RULE_ENGINE",
-    affectedArea: "SCORING",
-    beforeJson: JSON.stringify({ touchdown: 6, fieldGoal: 3, turnoverPenalty: -2 }),
-    afterJson: JSON.stringify({ touchdown: 6, fieldGoal: 3, turnoverPenalty: -3 }),
-    risk: "Ranking volatility may increase after penalty weight changes.",
-    testPlan: "Backtest 2 full synthetic seasons and compare standings drift.",
-    rollbackPlan: "Revert penalty weight to previous matrix.",
-    requiredSignoffs: ["commissioner", "integrity", "security"],
-    creatorAgentId: "rules-committee",
-  });
-
-  await ensureProposalWithApproval({
-    leagueId: DEFAULT_LEAGUE_ID,
-    title: "Weak Proposal: Unbounded Retry Policy",
-    summary: "Intentionally weak proposal to verify QA signoff CHANGES_REQUESTED flow.",
-    tier: 2,
-    changeType: "OPS",
-    affectedArea: "RELIABILITY",
-    beforeJson: JSON.stringify({ retryLimit: 3, backoff: "exp" }),
-    afterJson: JSON.stringify({ retryLimit: -1, backoff: "none" }),
-    risk: "Missing realistic risk analysis (intentional for QA workflow).",
-    testPlan: "TODO",
-    rollbackPlan: "TODO",
-    requiredSignoffs: ["commissioner", "integrity", "qa-engineer"],
-    creatorAgentId: "architect",
-  });
-
-  const weakProposal = await prisma.proposal.findFirst({
-    where: { leagueId: DEFAULT_LEAGUE_ID, title: "Weak Proposal: Unbounded Retry Policy" },
-  });
-  if (weakProposal) {
-    await prisma.signoff.upsert({
-      where: { proposalId_agentId: { proposalId: weakProposal.id, agentId: "qa-engineer" } },
-      update: {
-        status: "CHANGES_REQUESTED",
-        comment: "Insufficient test/rollback detail. Changes required.",
-      },
-      create: {
-        leagueId: DEFAULT_LEAGUE_ID,
-        proposalId: weakProposal.id,
-        agentId: "qa-engineer",
-        status: "CHANGES_REQUESTED",
-        comment: "Insufficient test/rollback detail. Changes required.",
-      },
+    await ensureProposalWithApproval({
+      leagueId: DEFAULT_LEAGUE_ID,
+      title: "Anti-Tampering Escalation Policy v2",
+      summary: "Tier 2 policy update requiring Commissioner and Integrity signoff.",
+      tier: 2,
+      changeType: "POLICY",
+      affectedArea: "LEGAL_COMPLIANCE",
+      beforeJson: JSON.stringify({ escalationWindowHours: 24, autoFreeze: false }),
+      afterJson: JSON.stringify({ escalationWindowHours: 12, autoFreeze: true }),
+      risk: "False positives could increase operational friction.",
+      testPlan: "Replay 10 historical incidents against new policy thresholds.",
+      rollbackPlan: "Restore prior escalation window and disable auto-freeze.",
+      requiredSignoffs: ["commissioner", "integrity"],
+      creatorAgentId: "integrity",
     });
-  }
 
-  const spamPost = await prisma.post.findFirst({
-    where: { leagueId: DEFAULT_LEAGUE_ID, title: "SPAM: Leak exploit now" },
-  });
-  if (!spamPost) {
-    await prisma.post.create({
-      data: {
-        leagueId: DEFAULT_LEAGUE_ID,
-        authorAgentId: null,
-        title: "SPAM: Leak exploit now",
-        bodyMarkdown: "leak exploit free tokens click now click now click now",
-        tags: "spam,flagged",
-        visibility: "PUBLIC",
-      },
+    await ensureProposalWithApproval({
+      leagueId: DEFAULT_LEAGUE_ID,
+      title: "Scoring Engine Weight Matrix v2",
+      summary: "Tier 3 scoring change requiring Commissioner, Integrity, and Security signoff.",
+      tier: 3,
+      changeType: "RULE_ENGINE",
+      affectedArea: "SCORING",
+      beforeJson: JSON.stringify({ touchdown: 6, fieldGoal: 3, turnoverPenalty: -2 }),
+      afterJson: JSON.stringify({ touchdown: 6, fieldGoal: 3, turnoverPenalty: -3 }),
+      risk: "Ranking volatility may increase after penalty weight changes.",
+      testPlan: "Backtest 2 full synthetic seasons and compare standings drift.",
+      rollbackPlan: "Revert penalty weight to previous matrix.",
+      requiredSignoffs: ["commissioner", "integrity", "security"],
+      creatorAgentId: "rules-committee",
     });
+
+    await ensureProposalWithApproval({
+      leagueId: DEFAULT_LEAGUE_ID,
+      title: "Weak Proposal: Unbounded Retry Policy",
+      summary: "Intentionally weak proposal to verify QA signoff CHANGES_REQUESTED flow.",
+      tier: 2,
+      changeType: "OPS",
+      affectedArea: "RELIABILITY",
+      beforeJson: JSON.stringify({ retryLimit: 3, backoff: "exp" }),
+      afterJson: JSON.stringify({ retryLimit: -1, backoff: "none" }),
+      risk: "Missing realistic risk analysis (intentional for QA workflow).",
+      testPlan: "TODO",
+      rollbackPlan: "TODO",
+      requiredSignoffs: ["commissioner", "integrity", "qa-engineer"],
+      creatorAgentId: "architect",
+    });
+
+    const weakProposal = await prisma.proposal.findFirst({
+      where: { leagueId: DEFAULT_LEAGUE_ID, title: "Weak Proposal: Unbounded Retry Policy" },
+    });
+    if (weakProposal) {
+      await prisma.signoff.upsert({
+        where: { proposalId_agentId: { proposalId: weakProposal.id, agentId: "qa-engineer" } },
+        update: {
+          status: "CHANGES_REQUESTED",
+          comment: "Insufficient test/rollback detail. Changes required.",
+        },
+        create: {
+          leagueId: DEFAULT_LEAGUE_ID,
+          proposalId: weakProposal.id,
+          agentId: "qa-engineer",
+          status: "CHANGES_REQUESTED",
+          comment: "Insufficient test/rollback detail. Changes required.",
+        },
+      });
+    }
+
+    const spamPost = await prisma.post.findFirst({
+      where: { leagueId: DEFAULT_LEAGUE_ID, title: "SPAM: Leak exploit now" },
+    });
+    if (!spamPost) {
+      await prisma.post.create({
+        data: {
+          leagueId: DEFAULT_LEAGUE_ID,
+          authorAgentId: null,
+          title: "SPAM: Leak exploit now",
+          bodyMarkdown: "leak exploit free tokens click now click now click now",
+          tags: "spam,flagged",
+          visibility: "PUBLIC",
+        },
+      });
+    }
+  } else {
+    await prisma.agentRegistration.deleteMany({ where: { leagueId: DEFAULT_LEAGUE_ID, claimCode: "AFL-DEMO-CLAIM" } });
+    const demoProposalIds = (
+      await prisma.proposal.findMany({
+        where: {
+          leagueId: DEFAULT_LEAGUE_ID,
+          title: {
+            in: ["Anti-Tampering Escalation Policy v2", "Scoring Engine Weight Matrix v2", "Weak Proposal: Unbounded Retry Policy"],
+          },
+        },
+        select: { id: true },
+      })
+    ).map((p) => p.id);
+    if (demoProposalIds.length > 0) {
+      await prisma.signoff.deleteMany({ where: { leagueId: DEFAULT_LEAGUE_ID, proposalId: { in: demoProposalIds } } });
+      await prisma.approval.deleteMany({ where: { leagueId: DEFAULT_LEAGUE_ID, proposalId: { in: demoProposalIds } } });
+      await prisma.reviewRequest.deleteMany({ where: { leagueId: DEFAULT_LEAGUE_ID, proposalId: { in: demoProposalIds } } });
+      await prisma.proposal.deleteMany({ where: { leagueId: DEFAULT_LEAGUE_ID, id: { in: demoProposalIds } } });
+    }
+    await prisma.post.deleteMany({ where: { leagueId: DEFAULT_LEAGUE_ID, title: "SPAM: Leak exploit now" } });
   }
 
   await prisma.eventLog.create({
     data: {
       leagueId: DEFAULT_LEAGUE_ID,
       type: "SEED",
-      summary: "Season 0 v5 + Season 1 bootstrap seed complete. League, agents, governance, ranked, teams, and schedule ready.",
+      summary: INCLUDE_DEMO_ARTIFACTS
+        ? "Season 0 v5 + Season 1 bootstrap seed complete with demo artifacts."
+        : "Season 0 v5 + Season 1 bootstrap seed complete with production defaults.",
       meta: JSON.stringify({
         agentCount: AGENTS.length,
         phaseCount: SEASON_PHASES.length,
@@ -1110,7 +1190,8 @@ async function main() {
         season1Games: 28,
         season1EngineVersion: SEASON1_ENGINE_VERSION,
         hasLeagueSettings: true,
-        hasSeedSubmission: true,
+        hasSeedSubmission: INCLUDE_DEMO_ARTIFACTS,
+        includeDemoArtifacts: INCLUDE_DEMO_ARTIFACTS,
         defaultLeagueId: DEFAULT_LEAGUE_ID,
         defaultUserId: DEFAULT_USER_ID,
       }),

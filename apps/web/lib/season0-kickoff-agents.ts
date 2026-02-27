@@ -14,12 +14,14 @@ type KickoffSummary = {
   signoffsChangesRequested: number;
 };
 
+const ENABLE_SYNTHETIC_KICKOFF_SCENARIOS = process.env.AFL_ENABLE_DEMO_SCENARIOS === "1";
+
 const MINIMUMS = {
   tasks: 50,
   proposals: 8,
-  incidents: 3,
+  incidents: ENABLE_SYNTHETIC_KICKOFF_SCENARIOS ? 3 : 0,
   socialPosts: 10,
-  combineRuns: 5,
+  combineRuns: ENABLE_SYNTHETIC_KICKOFF_SCENARIOS ? 5 : 0,
 };
 
 const PHASES = [
@@ -555,7 +557,9 @@ export async function runSeasonZeroKickoffAgents(leagueId: string): Promise<Kick
     { title: "Key Rotation Cadence Policy", tier: 2, creatorAgentId: "security", changeType: "SECURITY", affectedArea: "KEYS" },
     { title: "Ruleset Alignment v1", tier: 2, creatorAgentId: "rules-committee", changeType: "RULES", affectedArea: "COMPETITION" },
     { title: "Approval Queue SLA Controls", tier: 1, creatorAgentId: "chief-of-staff", changeType: "OPS", affectedArea: "GOVERNANCE" },
-    { title: "Weak Proposal: Unbounded Retry Policy", tier: 2, creatorAgentId: "architect", changeType: "OPS", affectedArea: "RELIABILITY", weak: true },
+    ...(ENABLE_SYNTHETIC_KICKOFF_SCENARIOS
+      ? [{ title: "Weak Proposal: Unbounded Retry Policy", tier: 2, creatorAgentId: "architect", changeType: "OPS", affectedArea: "RELIABILITY", weak: true }]
+      : []),
   ] as const;
   for (const spec of proposalSpecs) {
     await ensureProposal({
@@ -571,72 +575,74 @@ export async function runSeasonZeroKickoffAgents(leagueId: string): Promise<Kick
     });
   }
 
-  const weakProposal = await prisma.proposal.findFirst({
-    where: { leagueId, title: "Weak Proposal: Unbounded Retry Policy" },
-  });
-  if (weakProposal) {
-    const qaSignoff = await prisma.signoff.upsert({
-      where: { proposalId_agentId: { proposalId: weakProposal.id, agentId: "qa-engineer" } },
-      update: { status: "CHANGES_REQUESTED", comment: "Insufficient rollback/test depth. Please revise." },
-      create: {
+  if (ENABLE_SYNTHETIC_KICKOFF_SCENARIOS) {
+    const weakProposal = await prisma.proposal.findFirst({
+      where: { leagueId, title: "Weak Proposal: Unbounded Retry Policy" },
+    });
+    if (weakProposal) {
+      const qaSignoff = await prisma.signoff.upsert({
+        where: { proposalId_agentId: { proposalId: weakProposal.id, agentId: "qa-engineer" } },
+        update: { status: "CHANGES_REQUESTED", comment: "Insufficient rollback/test depth. Please revise." },
+        create: {
+          leagueId,
+          proposalId: weakProposal.id,
+          agentId: "qa-engineer",
+          status: "CHANGES_REQUESTED",
+          comment: "Insufficient rollback/test depth. Please revise.",
+        },
+      });
+      await logEvent({
         leagueId,
-        proposalId: weakProposal.id,
         agentId: "qa-engineer",
-        status: "CHANGES_REQUESTED",
-        comment: "Insufficient rollback/test depth. Please revise.",
-      },
-    });
-    await logEvent({
+        type: "SIGNOFF_CHANGES_REQUESTED",
+        summary: "QA requested changes on weak kickoff proposal.",
+        entityType: "PROPOSAL",
+        entityId: weakProposal.id,
+        proposalId: weakProposal.id,
+        meta: { signoffId: qaSignoff.id },
+      });
+    }
+
+    await ensureIncident({
       leagueId,
-      agentId: "qa-engineer",
-      type: "SIGNOFF_CHANGES_REQUESTED",
-      summary: "QA requested changes on weak kickoff proposal.",
-      entityType: "PROPOSAL",
-      entityId: weakProposal.id,
-      proposalId: weakProposal.id,
-      meta: { signoffId: qaSignoff.id },
+      sourceAgentId: "security",
+      severity: "HIGH",
+      title: "Authz denied spike detected",
+      description: "Security observed repeated AUTHZ_DENIED events beyond threshold.",
     });
-  }
+    await ensureIncident({
+      leagueId,
+      sourceAgentId: "integrity",
+      severity: "MEDIUM",
+      title: "Potential rule violation in approval flow",
+      description: "Integrity flagged proposal path without full signoff chain.",
+    });
+    await ensureIncident({
+      leagueId,
+      sourceAgentId: "sre",
+      severity: "HIGH",
+      title: "Elevated API error rate on runbook execution",
+      description: "SRE observed elevated runbook API error rates during kickoff burst.",
+      resolve: true,
+    });
 
-  await ensureIncident({
-    leagueId,
-    sourceAgentId: "security",
-    severity: "HIGH",
-    title: "Authz denied spike detected",
-    description: "Security observed repeated AUTHZ_DENIED events beyond threshold.",
-  });
-  await ensureIncident({
-    leagueId,
-    sourceAgentId: "integrity",
-    severity: "MEDIUM",
-    title: "Potential rule violation in approval flow",
-    description: "Integrity flagged proposal path without full signoff chain.",
-  });
-  await ensureIncident({
-    leagueId,
-    sourceAgentId: "sre",
-    severity: "HIGH",
-    title: "Elevated API error rate on runbook execution",
-    description: "SRE observed elevated runbook API error rates during kickoff burst.",
-    resolve: true,
-  });
-
-  const combineAgents = ["commissioner", "architect", "security", "integrity", "qa-engineer", "rankings"];
-  for (const [idx, agentId] of combineAgents.entries()) {
-    const existing = await prisma.combineRun.findFirst({
-      where: {
-        leagueId,
-        agentId,
-        runType: "COMBINE",
-        notes: `season0-kickoff-agents:${agentId}`,
-      },
-    });
-    if (existing) continue;
-    const result = await runCombine(agentId, "COMBINE", 90 + idx, leagueId);
-    await prisma.combineRun.update({
-      where: { id: result.combineRunId },
-      data: { notes: `season0-kickoff-agents:${agentId}` },
-    });
+    const combineAgents = ["commissioner", "architect", "security", "integrity", "qa-engineer", "rankings"];
+    for (const [idx, agentId] of combineAgents.entries()) {
+      const existing = await prisma.combineRun.findFirst({
+        where: {
+          leagueId,
+          agentId,
+          runType: "COMBINE",
+          notes: `season0-kickoff-agents:${agentId}`,
+        },
+      });
+      if (existing) continue;
+      const result = await runCombine(agentId, "COMBINE", 90 + idx, leagueId);
+      await prisma.combineRun.update({
+        where: { id: result.combineRunId },
+        data: { notes: `season0-kickoff-agents:${agentId}` },
+      });
+    }
   }
 
   const combineLeaders = await prisma.combineRun.findMany({
