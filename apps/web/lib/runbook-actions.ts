@@ -357,17 +357,22 @@ export async function executeRunbookAction(runbook: RunbookLike, runbookRunId: s
       prisma.incident.count({ where: { leagueId: runbook.leagueId, status: { not: "RESOLVED" } } }),
       prisma.runbook.count({ where: { leagueId: runbook.leagueId, triggerType: "SCHEDULED", isEnabled: true } }),
     ]);
-    const aiReportBody = await generateAgentNarrative({
-      agentName: agent.name,
-      goal: "Generate a weekly operations report with concrete next actions.",
-      context: [
-        `Runbook: ${runbook.name}`,
-        `Open tasks: ${openTasks}`,
-        `Pending approvals: ${pendingApprovals}`,
-        `Open incidents: ${openIncidents}`,
-        `Enabled scheduled runbooks: ${scheduledRunbooks}`,
-      ].join("\n"),
-    });
+
+    // Cost control: only planners (Commissioner/Chief of Staff) can use LLM narrative generation by default.
+    const allowLlmNarrative = agent.id === "commissioner" || agent.id === "chief-of-staff";
+    const aiReportBody = allowLlmNarrative
+      ? await generateAgentNarrative({
+          agentName: agent.name,
+          goal: "Generate a weekly operations report with concrete next actions.",
+          context: [
+            `Runbook: ${runbook.name}`,
+            `Open tasks: ${openTasks}`,
+            `Pending approvals: ${pendingApprovals}`,
+            `Open incidents: ${openIncidents}`,
+            `Enabled scheduled runbooks: ${scheduledRunbooks}`,
+          ].join("\n"),
+        })
+      : null;
     const message = await prisma.message.create({
       data: {
         leagueId: runbook.leagueId,
@@ -403,7 +408,7 @@ export async function executeRunbookAction(runbook: RunbookLike, runbookRunId: s
           meta: JSON.stringify({ provider: "anthropic", mode: "runbook_report", runbookId: runbook.id }),
         },
       });
-    } else if (hasClaudeAgentBrain()) {
+    } else if (allowLlmNarrative && hasClaudeAgentBrain()) {
       await prisma.eventLog.create({
         data: {
           leagueId: runbook.leagueId,
