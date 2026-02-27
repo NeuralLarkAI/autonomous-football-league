@@ -32,24 +32,50 @@ export default function ApprovalsPage() {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = () =>
-    fetch("/api/approvals")
+    fetch("/api/approvals", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d) => { setApprovals(Array.isArray(d) ? d : []); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then((d) => {
+        setApprovals(Array.isArray(d) ? d : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError("Failed to load approvals.");
+        setLoading(false);
+      });
 
   useEffect(() => { load(); }, []);
 
   const act = async (id: string, action: "approve" | "reject") => {
     setActing(id);
-    await fetch(`/api/approvals/${id}/${action}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    await load();
-    setActing(null);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/approvals/${id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (!res.ok) {
+        const message = typeof data.error === "string" ? data.error : `Failed to ${action}.`;
+        const missingSignoffs = Array.isArray(data.missingSignoffs)
+          ? ` Missing signoffs: ${data.missingSignoffs.join(", ")}.`
+          : "";
+        setError(`${message}${missingSignoffs}`);
+        return;
+      }
+      setApprovals((prev) => prev.filter((a) => a.id !== id));
+      setNotice(`Approval ${action === "approve" ? "approved" : "rejected"}.`);
+      await load();
+    } catch {
+      setError(`Failed to ${action}.`);
+    } finally {
+      setActing(null);
+    }
   };
 
   if (loading) {
@@ -62,6 +88,16 @@ export default function ApprovalsPage() {
         <h1 className="text-2xl font-bold text-slate-100">Approvals</h1>
         <span className="text-sm text-slate-400">{approvals.length} pending</span>
       </div>
+      {notice && (
+        <div className="rounded-lg border border-emerald-600/40 bg-emerald-900/20 px-3 py-2 text-sm text-emerald-200">
+          {notice}
+        </div>
+      )}
+      {error && (
+        <div className="rounded-lg border border-red-600/40 bg-red-900/20 px-3 py-2 text-sm text-red-200">
+          {error}
+        </div>
+      )}
 
       {approvals.length === 0 ? (
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-6 text-slate-400">
