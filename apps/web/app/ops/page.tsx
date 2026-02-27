@@ -9,6 +9,7 @@ type FeedEvent = {
   type: string;
   summary: string;
   createdAt: string;
+  meta?: string | null;
   agent: { name: string } | null;
 };
 
@@ -29,9 +30,43 @@ type Health = {
 };
 
 const ALERT_TYPES = new Set(["REJECTED", "SEASON_LOCK", "DEFERRED", "INCIDENT_CREATED", "INCIDENT_RESOLVED"]);
+const KICKOFF_INCIDENT_PREFIXES = ["Kickoff incident created:", "Kickoff incident resolved:"];
+const SYNTHETIC_INCIDENT_TITLES = new Set([
+  "Authz denied spike detected",
+  "Potential rule violation in approval flow",
+  "Elevated API error rate on runbook execution",
+]);
+
+function parseMeta(meta: string | null | undefined): Record<string, unknown> | null {
+  if (!meta) return null;
+  try {
+    return JSON.parse(meta) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function isSyntheticKickoffOrCombineAlert(ev: FeedEvent) {
+  if (ev.type === "DEFERRED") {
+    if (ev.summary.startsWith("Combine season lock check deferred Tier 3 action")) return true;
+    const parsed = parseMeta(ev.meta);
+    if (parsed?.deferred === true) return true;
+  }
+  if (ev.type === "INCIDENT_CREATED" || ev.type === "INCIDENT_RESOLVED") {
+    if (KICKOFF_INCIDENT_PREFIXES.some((prefix) => ev.summary.startsWith(prefix))) return true;
+    if (ev.summary.includes("[COMBINE") && ev.summary.includes("Incident Triage")) return true;
+  }
+  return false;
+}
 
 function isAlert(ev: FeedEvent) {
-  return ALERT_TYPES.has(ev.type);
+  if (!ALERT_TYPES.has(ev.type)) return false;
+  return !isSyntheticKickoffOrCombineAlert(ev);
+}
+
+function isSyntheticIncident(incident: Incident) {
+  if (incident.title.startsWith("[COMBINE")) return true;
+  return SYNTHETIC_INCIDENT_TITLES.has(incident.title);
 }
 
 export default function OpsPage() {
@@ -76,6 +111,7 @@ export default function OpsPage() {
   };
 
   const alerts = events.filter(isAlert);
+  const visibleIncidents = incidents.filter((incident) => !isSyntheticIncident(incident));
   const deployLog = events.filter((e) => ["KICKOFF", "SEED", "SEASON_LOCK"].includes(e.type));
 
   if (loading) {
@@ -123,11 +159,11 @@ export default function OpsPage() {
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-red-400 uppercase tracking-wider">Incidents</h2>
-        {incidents.length === 0 ? (
+        {visibleIncidents.length === 0 ? (
           <p className="text-sm text-slate-500 bg-slate-800/40 rounded-xl p-4">No incidents.</p>
         ) : (
           <div className="space-y-2">
-            {incidents.map((incident) => (
+            {visibleIncidents.map((incident) => (
               <div key={incident.id} className="flex items-center justify-between rounded-xl border border-slate-700/40 bg-slate-800/50 p-3">
                 <div>
                   <Link href={`/incidents/${incident.id}`} className="text-sm text-slate-200 hover:underline">
