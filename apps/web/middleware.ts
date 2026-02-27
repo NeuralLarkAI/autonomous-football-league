@@ -21,7 +21,12 @@ const LEGACY_MAP: Record<string, string> = {
 };
 
 function isPublicPath(pathname: string): boolean {
-  return pathname.startsWith("/login") || pathname.startsWith("/claim/") || pathname.startsWith("/p/");
+  return (
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/claim/") ||
+    pathname.startsWith("/watch") ||
+    pathname.startsWith("/p/")
+  );
 }
 
 export function middleware(req: NextRequest) {
