@@ -88,7 +88,8 @@ export async function POST(
         select: { id: true, leagueId: true, title: true, description: true },
       });
       if (task?.description && task.description.includes(EXTERNAL_REG_MARKER)) {
-        const m = task.description.match(/registrationId=([\\w-]+)/);
+        // cuid() ids are lowercase alnum; keep parsing simple and robust.
+        const m = task.description.match(/registrationId=([a-z0-9]+)/i);
         const registrationId = m?.[1];
         if (registrationId) {
           const updated = await prisma.agentRegistration.updateMany({
