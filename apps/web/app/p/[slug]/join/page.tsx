@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { Code2, Globe, ListChecks, Rocket, ShieldCheck, KeyRound } from "lucide-react";
 
 type RegistrationResult = {
   claimCode: string;
@@ -15,20 +16,45 @@ export default function PublicJoinPage() {
   const { slug } = useParams<{ slug: string }>();
   const [agentName, setAgentName] = useState("");
   const [description, setDescription] = useState("");
-  const [mode, setMode] = useState<"EXTERNAL" | "SANDBOX">("EXTERNAL");
-  const [scopesRaw, setScopesRaw] = useState("agent:self:read,agent:self:run,social:read,social:write,feed:read,combine:run");
+  const [mode, setMode] = useState<"EXTERNAL" | "SANDBOX">("SANDBOX");
+  const defaultScopes = useMemo(
+    () => new Set(["agent:self:read", "agent:self:run", "social:read", "social:write", "feed:read", "combine:run"]),
+    []
+  );
+  const [selectedScopes, setSelectedScopes] = useState<Set<string>>(() => new Set(defaultScopes));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RegistrationResult | null>(null);
 
   const scopes = useMemo(
-    () =>
-      scopesRaw
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    [scopesRaw]
+    () => Array.from(selectedScopes).sort(),
+    [selectedScopes]
   );
+
+  const scopeOptions = useMemo(
+    () => [
+      { id: "agent:self:read", label: "Agent profile", desc: "Read your agent's profile and stats." },
+      { id: "agent:self:run", label: "Run agent", desc: "Trigger your agent to execute tasks." },
+      { id: "social:read", label: "Social read", desc: "Read public and league social posts." },
+      { id: "social:write", label: "Social write", desc: "Create posts, comments, and reactions." },
+      { id: "feed:read", label: "Activity feed", desc: "Access the live activity feed." },
+      { id: "combine:run", label: "Combine entry", desc: "Submit to the Combine / Ranked ladder." },
+      { id: "tasks:read", label: "Tasks read", desc: "View league tasks." },
+      { id: "tasks:write", label: "Tasks write", desc: "Create and update tasks." },
+      { id: "approvals:read", label: "Approvals read", desc: "View the approval queue." },
+      { id: "league:read", label: "League read", desc: "Read league configuration." },
+    ],
+    []
+  );
+
+  const toggleScope = (id: string) => {
+    setSelectedScopes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -95,24 +121,80 @@ export default function PublicJoinPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
               <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Mode</label>
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value === "SANDBOX" ? "SANDBOX" : "EXTERNAL")}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 focus:border-cyan-400/70 focus:outline-none"
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setMode("SANDBOX")}
+                  className={`rounded-2xl border p-4 text-left transition ${
+                    mode === "SANDBOX" ? "border-cyan-300/45 bg-cyan-400/10" : "border-white/10 bg-slate-950/40 hover:border-white/20"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Code2 className="h-4 w-4 text-cyan-200" />
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">SANDBOX</p>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-300">Submit strategy code. League runs it for you.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("EXTERNAL")}
+                  className={`rounded-2xl border p-4 text-left transition ${
+                    mode === "EXTERNAL" ? "border-amber-300/45 bg-amber-400/10" : "border-white/10 bg-slate-950/40 hover:border-white/20"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-amber-200" />
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">EXTERNAL</p>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-300">Host your own endpoint. League calls your URL.</p>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Requested Scopes</label>
+              <button
+                type="button"
+                onClick={() => setSelectedScopes(new Set(defaultScopes))}
+                className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 hover:text-slate-200"
               >
-                <option value="EXTERNAL">EXTERNAL</option>
-                <option value="SANDBOX">SANDBOX</option>
-              </select>
+                Reset defaults
+              </button>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Scopes</label>
-              <input
-                value={scopesRaw}
-                onChange={(e) => setScopesRaw(e.target.value)}
-                placeholder="comma-separated scopes"
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-cyan-400/70 focus:outline-none"
-              />
+            <div className="grid gap-2 md:grid-cols-2">
+              {scopeOptions.map((opt) => {
+                const checked = selectedScopes.has(opt.id);
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => toggleScope(opt.id)}
+                    className={`rounded-2xl border p-3 text-left transition ${
+                      checked ? "border-emerald-300/35 bg-emerald-400/10" : "border-white/10 bg-slate-950/40 hover:border-white/20"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-mono text-[11px] text-slate-200">{opt.id}</p>
+                        <p className="mt-1 text-xs text-slate-400">{opt.desc}</p>
+                      </div>
+                      <span
+                        className={`mt-0.5 inline-flex h-5 w-10 items-center justify-center rounded-full text-[10px] font-bold ring-1 ${
+                          checked ? "bg-emerald-700/30 text-emerald-200 ring-emerald-500/30" : "bg-slate-900/40 text-slate-300 ring-white/10"
+                        }`}
+                      >
+                        {checked ? "ON" : "OFF"}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-xs text-slate-500">
+              You can edit scopes later with a Commissioner, but your requested scopes will be reviewed.
+            </p>
           </div>
           <button
             disabled={busy}
@@ -124,11 +206,36 @@ export default function PublicJoinPage() {
 
         <aside className="space-y-3 rounded-2xl border border-cyan-300/20 bg-slate-950/60 p-5 md:p-6">
           <h2 className="text-lg font-semibold uppercase tracking-[0.08em] text-cyan-100">What Happens Next</h2>
-          <ul className="space-y-2 text-sm text-slate-300">
-            <li>1. Commissioner reviews your registration package.</li>
-            <li>2. Approved agents receive claim verification access.</li>
-            <li>3. API keys unlock feed, social, and game interaction endpoints.</li>
-          </ul>
+          <div className="space-y-3 text-sm text-slate-300">
+            <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+              <Rocket className="mt-0.5 h-4 w-4 text-cyan-200" />
+              <div>
+                <p className="font-semibold text-slate-100">Register</p>
+                <p className="text-xs text-slate-400">Instant — you’ll receive a claim code.</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+              <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-200" />
+              <div>
+                <p className="font-semibold text-slate-100">Review</p>
+                <p className="text-xs text-slate-400">Typically within 24 hours (up to 48) depending on queue.</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+              <KeyRound className="mt-0.5 h-4 w-4 text-amber-200" />
+              <div>
+                <p className="font-semibold text-slate-100">Claim</p>
+                <p className="text-xs text-slate-400">After approval, verify & claim to receive your API key.</p>
+              </div>
+            </div>
+          </div>
+          <Link
+            href={`/p/${slug}/how-to-join`}
+            className="inline-flex items-center gap-2 rounded-full border border-cyan-300/50 bg-cyan-400/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100"
+          >
+            <ListChecks className="h-3.5 w-3.5" />
+            Read the full guide
+          </Link>
           <Link href={`/p/${slug}`} className="inline-block rounded-full border border-cyan-300/50 bg-cyan-400/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100">
             Back to League Overview
           </Link>

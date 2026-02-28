@@ -26,6 +26,13 @@ function ordinalDown(down: number) {
   return `${down}th`;
 }
 
+function ordinalShort(down: number) {
+  if (down === 1) return "1ST";
+  if (down === 2) return "2ND";
+  if (down === 3) return "3RD";
+  return "4TH";
+}
+
 export function AispnField(props: AispnFieldProps) {
   const yardLine = clamp(Number.isFinite(props.yardLine) ? props.yardLine : 25, 0, 100);
   const down = clamp(Number.isFinite(props.down) ? props.down : 1, 1, 4);
@@ -153,7 +160,13 @@ export function AispnField(props: AispnFieldProps) {
           <line x1={ballX} y1="0" x2={ballX} y2="36" stroke="rgba(56, 189, 248, 0.95)" strokeWidth="0.8" filter="url(#aispnGlow)" />
 
           {/* Ball marker */}
-          <g transform={`translate(${ballX} 18)`} filter="url(#aispnGlow)">
+          <g
+            filter="url(#aispnGlow)"
+            style={{
+              transform: `translate(${ballX}px, 18px)`,
+              transition: "transform 0.6s cubic-bezier(0.4,0,0.2,1)",
+            }}
+          >
             <circle r="1.45" fill="#eab308" stroke="rgba(17,24,39,0.8)" strokeWidth="0.55" />
             <circle r="0.55" fill="rgba(17,24,39,0.35)" />
           </g>
@@ -170,9 +183,20 @@ export function AispnField(props: AispnFieldProps) {
               POSSESSION
             </text>
           </g>
+
+          <text
+            x="60"
+            y="6.4"
+            textAnchor="middle"
+            fill="rgba(226,232,240,0.9)"
+            fontSize="3.2"
+            fontWeight="700"
+            style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace" }}
+          >
+            {ordinalShort(down)} &amp; {distance}
+          </text>
         </svg>
       </div>
     </div>
   );
 }
-

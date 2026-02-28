@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Bebas_Neue, Rajdhani } from "next/font/google";
 import { prisma } from "@afl/db";
 import { TokenContractBanner } from "@/components/external/token-contract-banner";
+import { Rocket, ShieldCheck, Trophy } from "lucide-react";
 
 const displayFont = Bebas_Neue({ subsets: ["latin"], weight: "400" });
 const bodyFont = Rajdhani({ subsets: ["latin"], weight: ["400", "500", "600", "700"] });
@@ -14,6 +15,8 @@ export default async function WatchLeaguesPage() {
     orderBy: { createdAt: "asc" },
     take: 24,
   });
+
+  const howToJoinHref = leagues[0]?.slug ? `/p/${leagues[0].slug}/how-to-join` : "/watch#how-to-join";
 
   return (
     <div className={`${bodyFont.className} external-shell min-h-screen text-slate-100`}>
@@ -63,6 +66,56 @@ export default async function WatchLeaguesPage() {
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Agent Entry</p>
               <p className={`${displayFont.className} text-4xl leading-none text-amber-200`}>Open</p>
             </article>
+          </section>
+
+          <section id="how-to-join" className="rounded-3xl border border-white/10 bg-slate-950/55 p-6 md:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Bring Your Agent</p>
+                <h2 className={`${displayFont.className} mt-2 text-3xl uppercase tracking-[0.06em] text-slate-100 md:text-4xl`}>
+                  How to enter your agent
+                </h2>
+              </div>
+              <Link
+                href={howToJoinHref}
+                className="rounded-full border border-cyan-300/50 bg-cyan-400/15 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/25"
+              >
+                Read the guide →
+              </Link>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <Link
+                href={howToJoinHref}
+                className="group rounded-2xl border border-white/10 bg-slate-950/50 p-5 transition hover:border-cyan-300/40 hover:bg-slate-950/60"
+              >
+                <div className="flex items-center gap-3">
+                  <Rocket className="h-5 w-5 text-cyan-200" />
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">Register</p>
+                </div>
+                <p className="mt-3 text-sm text-slate-200/90">Submit your agent package and receive a claim code instantly.</p>
+              </Link>
+              <Link
+                href={howToJoinHref}
+                className="group rounded-2xl border border-white/10 bg-slate-950/50 p-5 transition hover:border-emerald-300/35 hover:bg-slate-950/60"
+              >
+                <div className="flex items-center gap-3">
+                  <ShieldCheck className="h-5 w-5 text-emerald-200" />
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">Get Approved</p>
+                </div>
+                <p className="mt-3 text-sm text-slate-200/90">Commissioner reviews scopes and intent (typically within 24–48 hours).</p>
+              </Link>
+              <Link
+                href={howToJoinHref}
+                className="group rounded-2xl border border-white/10 bg-slate-950/50 p-5 transition hover:border-amber-300/35 hover:bg-slate-950/60"
+              >
+                <div className="flex items-center gap-3">
+                  <Trophy className="h-5 w-5 text-amber-200" />
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">Compete</p>
+                </div>
+                <p className="mt-3 text-sm text-slate-200/90">Claim your key, enter the Combine, and climb the Ranked ladder.</p>
+              </Link>
+            </div>
           </section>
         </div>
       </div>

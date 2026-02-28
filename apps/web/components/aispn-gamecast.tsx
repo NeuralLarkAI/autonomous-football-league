@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AispnField } from "@/components/aispn-field";
 
 type Team = { id: string; shortName: string; name: string };
@@ -147,6 +147,12 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
   const [tab, setTab] = useState<"gamecast" | "plays" | "drives" | "box">("gamecast");
   const [connected, setConnected] = useState(false);
   const [selectedPlayId, setSelectedPlayId] = useState<string | null>(null);
+  const [pulseAway, setPulseAway] = useState(false);
+  const [pulseHome, setPulseHome] = useState(false);
+  const [scoringFlash, setScoringFlash] = useState<string | null>(null);
+  const prevScoreAway = useRef<number>(0);
+  const prevScoreHome = useRef<number>(0);
+  const lastFlashPlayId = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/p/${slug}/games/${gameId}`, { cache: "no-store" });
@@ -215,6 +221,77 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
     return scored.slice(-12);
   }, [data]);
 
+  useEffect(() => {
+    if (!data) return;
+
+    if (data.game.scoreAway > prevScoreAway.current) {
+      setPulseAway(true);
+      setTimeout(() => setPulseAway(false), 700);
+    }
+    if (data.game.scoreHome > prevScoreHome.current) {
+      setPulseHome(true);
+      setTimeout(() => setPulseHome(false), 700);
+    }
+    prevScoreAway.current = data.game.scoreAway;
+    prevScoreHome.current = data.game.scoreHome;
+
+    const latest = data.plays?.[0] ?? null;
+    if (latest && latest.id !== lastFlashPlayId.current) {
+      const r = safeParseResult(latest) as any;
+      if (r?.td) {
+        lastFlashPlayId.current = latest.id;
+        setScoringFlash("TOUCHDOWN!");
+        setTimeout(() => setScoringFlash(null), 2200);
+      } else if (r?.fg) {
+        lastFlashPlayId.current = latest.id;
+        setScoringFlash("FIELD GOAL!");
+        setTimeout(() => setScoringFlash(null), 2200);
+      }
+    }
+  }, [data]);
+
+  const playMeta = (p: Play) => {
+    const r = safeParseResult(p) as any;
+    const desc = (p.description || "").toLowerCase();
+    const yards = Number.isFinite(r?.yards) ? Number(r?.yards) : null;
+
+    const icon = (() => {
+      if (r?.td) return "🏈";
+      if (r?.fg) return "🎯";
+      if (r?.turnover) return "⚠️";
+      if (desc.includes("penalty")) return "🚩";
+      if (desc.includes("punt")) return "👟";
+      if (desc.includes("pass") && yards != null && yards > 0) return "✅";
+      if (desc.includes("pass")) return "❌";
+      if (r?.firstDown) return "🔑";
+      if (desc.includes("run") || desc.includes("rush")) return "🏃";
+      return "🏈";
+    })();
+
+    const rowTone = (() => {
+      if (r?.td) return "bg-yellow-900/30 border-yellow-500/30";
+      if (r?.fg) return "bg-emerald-900/20 border-emerald-500/20";
+      if (yards != null && yards < 0) return "bg-red-900/20 border-white/10";
+      if (yards != null && yards >= 10) return "bg-green-900/20 border-white/10";
+      if (yards != null && yards >= 0 && yards <= 3) return "bg-slate-800/40 border-white/10";
+      return "bg-slate-950/55 border-white/10";
+    })();
+
+    const iconTone = (() => {
+      if (r?.td) return "text-yellow-300";
+      if (r?.fg) return "text-emerald-200";
+      if (r?.turnover) return "text-rose-300";
+      if (desc.includes("penalty")) return "text-red-300";
+      if (desc.includes("punt")) return "text-slate-300";
+      if (desc.includes("pass") && yards != null && yards > 0) return "text-blue-200";
+      if (desc.includes("pass")) return "text-slate-300";
+      if (desc.includes("run") || desc.includes("rush")) return "text-emerald-200";
+      return "text-slate-200";
+    })();
+
+    return { r, icon, rowTone, iconTone, yards };
+  };
+
   if (!data || !state || !offenseTeam || !defenseTeam) {
     return (
       <div className="mx-auto max-w-6xl px-6 py-10 text-slate-100">
@@ -250,12 +327,21 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-5 shadow-[0_10px_40px_rgba(2,8,23,0.55)]">
-        <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-end">
+        <div className="relative">
+          {scoringFlash && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center animate-td-flash">
+              <span className="text-4xl font-black tracking-widest text-yellow-300 drop-shadow-[0_0_20px_rgba(253,224,71,0.9)] md:text-5xl">
+                {scoringFlash}
+              </span>
+            </div>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-end">
           <div className="space-y-1">
             <p className={`text-sm font-semibold text-slate-200 ${awayWins}`}>{data.game.awayTeam.name}</p>
             <div className="flex items-baseline justify-between">
               <p className="text-3xl font-black tracking-tight">{data.game.awayTeam.shortName}</p>
-              <p className="text-5xl font-black tabular-nums">{data.game.scoreAway}</p>
+              <p className={`text-5xl font-black tabular-nums ${pulseAway ? "animate-score-pulse" : ""}`}>{data.game.scoreAway}</p>
             </div>
           </div>
           <div className="hidden text-center text-xs uppercase tracking-[0.25em] text-slate-400 md:block">
@@ -265,9 +351,10 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
           <div className="space-y-1 text-right">
             <p className={`text-sm font-semibold text-slate-200 ${homeWins}`}>{data.game.homeTeam.name}</p>
             <div className="flex items-baseline justify-between gap-3 md:justify-end">
-              <p className="text-5xl font-black tabular-nums">{data.game.scoreHome}</p>
+              <p className={`text-5xl font-black tabular-nums ${pulseHome ? "animate-score-pulse" : ""}`}>{data.game.scoreHome}</p>
               <p className="text-3xl font-black tracking-tight">{data.game.homeTeam.shortName}</p>
             </div>
+          </div>
           </div>
         </div>
 
@@ -403,8 +490,9 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
 
       {tab === "plays" && (
         <div className="space-y-2">
-          {data.plays.map((p) => {
-            const r = safeParseResult(p) as any;
+          {data.plays.map((p, idx) => {
+            const meta = playMeta(p);
+            const r = meta.r as any;
             const badges: Array<{ label: string; cls: string }> = [];
             if (r?.td) badges.push({ label: "TD", cls: "bg-emerald-700/30 text-emerald-200 ring-emerald-500/30" });
             if (r?.fg) badges.push({ label: "FG", cls: "bg-amber-700/30 text-amber-200 ring-amber-500/30" });
@@ -415,16 +503,21 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
               <button
                 key={p.id}
                 onClick={() => setSelectedPlayId(p.id)}
-                className={`w-full rounded-2xl border bg-slate-950/55 p-4 text-left transition ${
+                className={`w-full rounded-2xl border p-4 text-left transition ${idx === 0 ? "animate-play-slide" : ""} ${meta.rowTone} ${
                   selectedPlayId === p.id
                     ? "border-cyan-300/35 shadow-[0_0_0_1px_rgba(34,211,238,0.12)]"
-                    : "border-white/10 hover:border-white/20"
+                    : "hover:border-white/20"
                 }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                    Play {p.playNumber} | Q{p.qtr} {clock(p.timeSeconds)}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-950/60 text-sm ring-1 ring-white/10 ${meta.iconTone}`}>
+                      {meta.icon}
+                    </span>
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                      Play {p.playNumber} | Q{p.qtr} {clock(p.timeSeconds)}
+                    </p>
+                  </div>
                   <div className="flex gap-1.5">
                     {badges.map((b) => (
                       <span key={b.label} className={`rounded px-2 py-0.5 text-[10px] font-bold ring-1 ${b.cls}`}>

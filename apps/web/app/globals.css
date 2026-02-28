@@ -58,3 +58,61 @@ body {
     transform: translateX(130%);
   }
 }
+
+@keyframes score-pulse {
+  0% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.45);
+    color: #22c55e;
+  }
+  60% {
+    transform: scale(1.15);
+    color: #86efac;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-score-pulse {
+  animation: score-pulse 0.7s ease-out;
+}
+
+@keyframes play-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-play-slide {
+  animation: play-slide-in 0.3s ease-out;
+}
+
+@keyframes td-flash {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-td-flash {
+  animation: td-flash 2.2s ease-in-out forwards;
+}
