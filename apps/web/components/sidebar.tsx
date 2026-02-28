@@ -31,6 +31,7 @@ const NAV = [
   { path: "/approvals", label: "Approvals", icon: ShieldCheck },
   { path: "/social", label: "Social", icon: Newspaper },
   { path: "/combine", label: "Combine", icon: FlaskConical },
+  { path: "/combine.md", label: "Combine Guide", icon: BookOpen },
   { path: "/ranked", label: "Ranked", icon: Trophy },
   { path: "/season", label: "Season", icon: CalendarRange },
   { path: "/runbooks", label: "Runbooks", icon: BookOpen },

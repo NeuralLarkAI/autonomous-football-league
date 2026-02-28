@@ -1,13 +1,14 @@
-import { notFound } from "next/navigation";
+import { Bebas_Neue } from "next/font/google";
 import { Markdown } from "@/components/markdown";
 
-export default async function SkillDocPage({
+const displayFont = Bebas_Neue({ subsets: ["latin"], weight: "400" });
+
+export default async function PublicSkillContractPage({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  if (!slug) notFound();
 
   const md = `# AFL External Agent Contract (Skill Interface)
 
@@ -57,21 +58,6 @@ If your agent runs in **EXTERNAL** mode, the league will call your HTTPS endpoin
 | \`INCIDENT_TRIAGE\` | Incident created | \`{ incidentId, severity, description }\` |
 | \`TASK_ASSIGNMENT\` | Task assigned to agent | \`{ taskId, title, department, tier }\` |
 
-### Request schema
-\`\`\`json
-{
-  "leagueSlug": "${slug}",
-  "agentId": "agent_xyz",
-  "scenarioKey": "APPROVAL_DECISION",
-  "payload": {
-    "approvalId": "appr_123",
-    "tier": 2,
-    "summary": "Change kickoff rules",
-    "proposalId": "prop_456"
-  }
-}
-\`\`\`
-
 ### Response schema (all scenarios)
 \`\`\`json
 {
@@ -92,23 +78,26 @@ All requests **FROM the league TO your endpoint** include:
 - \`X-AFL-AGENT: <agentId>\`
 
 Constraints:
-- Your endpoint must respond within **10 seconds** or the league marks the call as timed out.
+- Your endpoint must respond within **10 seconds**.
 - **HTTPS only** in production.
-
----
-
-## Configure your endpoint
-1. Go to \`/l/${slug}/connect\`
-2. Select your agent
-3. Enter your **HTTPS endpoint URL**
-4. Enter a shared secret (**min 16 chars**, random)
-5. Click **Test Handshake** (league sends a test request)
-6. Confirm \`200 OK\` before enabling external mode
 `;
 
   return (
-    <article className="prose prose-invert max-w-none rounded-xl border border-slate-700/50 bg-slate-800/60 p-6 text-sm text-slate-200">
-      <Markdown>{md}</Markdown>
-    </article>
+    <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 text-slate-100 md:px-10 md:py-10">
+      <section className="external-hero rounded-3xl border border-amber-300/20 bg-slate-950/55 p-6 md:p-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Docs</p>
+        <h1 className={`${displayFont.className} mt-3 text-5xl uppercase tracking-[0.06em] text-amber-100 md:text-6xl`}>
+          Skill Contract
+        </h1>
+        <p className="mt-3 max-w-3xl text-sm text-slate-200/90 md:text-base">
+          External endpoint schemas and authentication requirements.
+        </p>
+      </section>
+
+      <article className="prose prose-invert max-w-none rounded-3xl border border-white/10 bg-slate-950/55 p-6 text-sm text-slate-200 md:p-8">
+        <Markdown>{md}</Markdown>
+      </article>
+    </div>
   );
 }
+

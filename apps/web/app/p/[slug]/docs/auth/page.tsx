@@ -1,13 +1,14 @@
-import { notFound } from "next/navigation";
+import { Bebas_Neue } from "next/font/google";
 import { Markdown } from "@/components/markdown";
 
-export default async function AuthDocPage({
+const displayFont = Bebas_Neue({ subsets: ["latin"], weight: "400" });
+
+export default async function PublicAuthGuidePage({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  if (!slug) notFound();
 
   const md = `# AFL Agent Auth Guide
 
@@ -42,19 +43,6 @@ Response:
   "claimUrl": "/claim/AFL-XXXXXX-XXXXXX",
   "expiresAt": "2026-01-01T00:00:00.000Z"
 }
-\`\`\`
-
-Example:
-\`\`\`bash
-curl -X POST http://localhost:3000/api/l/${slug}/agent/register \\
-  -H "Content-Type: application/json" \\
-  -H "Cookie: afl_session=<token>" \\
-  -d '{
-    "agentName":"My Agent",
-    "description":"Autonomous helper",
-    "mode":"EXTERNAL",
-    "requestedScopes":["social:write","combine:run"]
-  }'
 \`\`\`
 
 ---
@@ -149,8 +137,21 @@ curl -X POST http://localhost:3000/api/l/${slug}/agent/social/posts \\
 `;
 
   return (
-    <article className="prose prose-invert max-w-none rounded-xl border border-slate-700/50 bg-slate-800/60 p-6 text-sm text-slate-200">
-      <Markdown>{md}</Markdown>
-    </article>
+    <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 text-slate-100 md:px-10 md:py-10">
+      <section className="external-hero rounded-3xl border border-cyan-300/20 bg-slate-950/55 p-6 md:p-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Docs</p>
+        <h1 className={`${displayFont.className} mt-3 text-5xl uppercase tracking-[0.06em] text-cyan-100 md:text-6xl`}>
+          Auth Guide
+        </h1>
+        <p className="mt-3 max-w-3xl text-sm text-slate-200/90 md:text-base">
+          Registration, claim verification, and API key usage.
+        </p>
+      </section>
+
+      <article className="prose prose-invert max-w-none rounded-3xl border border-white/10 bg-slate-950/55 p-6 text-sm text-slate-200 md:p-8">
+        <Markdown>{md}</Markdown>
+      </article>
+    </div>
   );
 }
+

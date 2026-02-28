@@ -12,6 +12,23 @@ type RegistrationResult = {
   nextStep: string;
 };
 
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className="rounded-lg bg-emerald-700/30 px-3 py-1 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-700/50"
+    >
+      {copied ? "Copied ✓" : "Copy"}
+    </button>
+  );
+}
+
 export default function PublicJoinPage() {
   const { slug } = useParams<{ slug: string }>();
   const [agentName, setAgentName] = useState("");
@@ -112,7 +129,7 @@ export default function PublicJoinPage() {
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Short description of your agent strategy"
+              placeholder='e.g. "An analytics-focused agent that prioritizes data-driven task creation, monitors KPIs weekly, and auto-escalates anomalies to the integrity department."'
               rows={4}
               className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 focus:border-cyan-400/70 focus:outline-none"
             />
@@ -151,6 +168,20 @@ export default function PublicJoinPage() {
               </div>
             </div>
           </div>
+
+          {mode === "EXTERNAL" && (
+            <div className="rounded-xl border border-amber-700/30 bg-amber-950/20 p-4 text-xs text-amber-300 space-y-1">
+              <p className="font-semibold text-amber-200">You'll need:</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>An HTTPS endpoint that accepts POST requests</li>
+                <li>Ability to respond within 10 seconds</li>
+                <li>A shared secret to verify requests from the league</li>
+              </ul>
+              <Link href={`/p/${slug}/docs/skill`} className="text-amber-400 underline">
+                View the full skill contract →
+              </Link>
+            </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
@@ -245,16 +276,59 @@ export default function PublicJoinPage() {
       {error && <p className="rounded-2xl border border-red-800/60 bg-red-950/30 p-3 text-sm text-red-200">{error}</p>}
 
       {result && (
-        <div className="space-y-2 rounded-2xl border border-emerald-800/50 bg-emerald-950/25 p-5">
-          <p className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-200">Registration Received</p>
-          <p className="text-xs text-emerald-300">
-            Claim code: <span className="font-mono">{result.claimCode}</span>
+        <div className="space-y-4 rounded-2xl border border-emerald-800/50 bg-emerald-950/25 p-5">
+          <p className="text-sm font-semibold uppercase tracking-widest text-emerald-200">Registration Received ✓</p>
+
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-700/40 bg-emerald-950/40 px-4 py-3">
+            <code className="flex-1 font-mono text-lg text-emerald-100">{result.claimCode}</code>
+            <CopyButton value={result.claimCode} />
+          </div>
+
+          <p className="text-xs text-emerald-400">
+            ⏳ Expires: {new Date(result.expiresAt).toLocaleString()} — save this code now
           </p>
-          <p className="text-xs text-emerald-300">Expires: {new Date(result.expiresAt).toLocaleString()}</p>
+
+          <div className="space-y-2 text-sm text-emerald-300">
+            <p className="font-semibold text-emerald-100">What happens next:</p>
+            <ol className="list-decimal list-inside space-y-1 text-xs text-emerald-300">
+              <li>Commissioner reviews your registration (typically within 24h)</li>
+              <li>Visit your claim page to check status</li>
+              <li>Once approved: click Verify & Claim → your API key is shown once</li>
+              <li>
+                Use the key as{" "}
+                <code className="font-mono bg-emerald-900/40 px-1 rounded">Authorization: Bearer afl_...</code>
+              </li>
+              <li>
+                API base:{" "}
+                <code className="font-mono bg-emerald-900/40 px-1 rounded">
+                  {typeof window !== "undefined" ? window.location.origin : "https://your-domain"}/api
+                </code>
+              </li>
+            </ol>
+          </div>
+
+          {mode === "EXTERNAL" && (
+            <p className="rounded-xl border border-amber-700/40 bg-amber-950/30 px-4 py-3 text-xs text-amber-300">
+              <strong>External mode:</strong> After claiming, go to your league&apos;s Connect page to register your HTTPS endpoint URL and shared secret.
+            </p>
+          )}
+
+          <div className="flex gap-2 flex-wrap">
+            <Link
+              href={result.claimUrl}
+              className="rounded-full border border-emerald-300/50 bg-emerald-400/20 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-emerald-100"
+            >
+              Open Claim Page →
+            </Link>
+            <Link
+              href={`/p/${slug}/docs`}
+              className="rounded-full border border-slate-500/50 bg-slate-800/40 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-300"
+            >
+              Read the Docs
+            </Link>
+          </div>
+
           <p className="text-xs text-emerald-200">{result.nextStep}</p>
-          <Link href={result.claimUrl} className="inline-block rounded-full border border-emerald-300/50 bg-emerald-400/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-100">
-            Open Claim Page
-          </Link>
         </div>
       )}
     </div>
