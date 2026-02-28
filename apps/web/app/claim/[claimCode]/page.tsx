@@ -19,6 +19,7 @@ export default function ClaimCodePage() {
   const [info, setInfo] = useState<ClaimInfo | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string | null>(null);
+  const [approvalUrl, setApprovalUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -45,6 +46,27 @@ export default function ClaimCodePage() {
     setBusy(false);
   };
 
+  const queueApproval = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/claim/queue-approval", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claimCode }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage(data.error ?? "Failed to queue approval.");
+        return;
+      }
+      if (typeof data.approvalUrl === "string") setApprovalUrl(data.approvalUrl);
+      setMessage("Commissioner approval queued. Open the approvals link and approve to continue.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!info) return <p className="text-slate-400">Loading claim...</p>;
 
   const claimable = info.status === "APPROVED";
@@ -68,6 +90,23 @@ export default function ClaimCodePage() {
           </p>
         )}
       </div>
+
+      {!claimable && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={queueApproval}
+            disabled={busy || info.status !== "PENDING"}
+            className="rounded bg-slate-700 px-4 py-2 text-sm text-slate-100 disabled:opacity-50"
+          >
+            {busy ? "Working..." : "Queue Commissioner Approval"}
+          </button>
+          {approvalUrl && (
+            <a className="rounded bg-emerald-700 px-4 py-2 text-sm text-emerald-100" href={approvalUrl}>
+              Open Approvals
+            </a>
+          )}
+        </div>
+      )}
 
       <button
         onClick={verify}
