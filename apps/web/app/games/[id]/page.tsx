@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AispnField } from "@/components/aispn-field";
 
 type Play = {
   id: string;
@@ -15,6 +16,8 @@ type Play = {
   offenseCallJson: string;
   defenseCallJson: string;
   resultJson: string;
+  offenseTeam?: { id: string; shortName: string } | null;
+  defenseTeam?: { id: string; shortName: string } | null;
 };
 
 type Drive = {
@@ -99,10 +102,34 @@ export default function GameDetailPage() {
     const latest = data?.plays[0];
     if (!latest) return null;
     try {
-      const result = JSON.parse(latest.resultJson) as { qtr?: number; timeSeconds?: number };
-      return { qtr: result.qtr ?? latest.qtr, timeSeconds: result.timeSeconds ?? latest.timeSeconds };
+      const result = JSON.parse(latest.resultJson) as Partial<{
+        qtr: number;
+        timeSeconds: number;
+        down: number;
+        distance: number;
+        yardLine: number;
+        offenseTeamId: string;
+        defenseTeamId: string;
+      }>;
+      return {
+        qtr: result.qtr ?? latest.qtr,
+        timeSeconds: result.timeSeconds ?? latest.timeSeconds,
+        down: result.down ?? latest.down,
+        distance: result.distance ?? latest.distance,
+        yardLine: result.yardLine ?? latest.yardLine,
+        offenseTeamId: result.offenseTeamId,
+        defenseTeamId: result.defenseTeamId,
+      };
     } catch {
-      return { qtr: latest.qtr, timeSeconds: latest.timeSeconds };
+      return {
+        qtr: latest.qtr,
+        timeSeconds: latest.timeSeconds,
+        down: latest.down,
+        distance: latest.distance,
+        yardLine: latest.yardLine,
+        offenseTeamId: undefined,
+        defenseTeamId: undefined,
+      };
     }
   }, [data?.plays]);
 
@@ -130,6 +157,19 @@ export default function GameDetailPage() {
           </div>
         </div>
       </div>
+
+      {data.plays[0] && lastPlayState && (
+        <AispnField
+          offenseLabel={data.plays[0].offenseTeam?.shortName ?? "OFF"}
+          defenseLabel={data.plays[0].defenseTeam?.shortName ?? "DEF"}
+          down={lastPlayState.down}
+          distance={lastPlayState.distance}
+          yardLine={lastPlayState.yardLine}
+          qtr={lastPlayState.qtr}
+          timeSeconds={lastPlayState.timeSeconds}
+          lastPlay={data.plays[0].description}
+        />
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button onClick={start} disabled={busy || data.game.status === "FINAL"} className="rounded bg-blue-700 px-3 py-1.5 text-sm text-blue-100 disabled:opacity-50">
