@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { randomToken } from "@/lib/auth";
 
+const EXTERNAL_REG_MARKER = "AFL_EXTERNAL_AGENT_REGISTRATION";
+
 function claimCode(): string {
   return `AFL-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 }
@@ -50,37 +52,87 @@ export async function POST(
       code = claimCode();
     }
 
-    const registration = await prisma.agentRegistration.create({
-      data: {
-        leagueId: league.id,
-        agentName,
-        description,
-        requestedScopes: JSON.stringify(requestedScopes),
-        mode,
-        status: "PENDING",
-        registrationToken: randomToken(20),
-        claimCode: code,
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2),
-      },
-    });
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 2);
+    const result = await prisma.$transaction(async (tx) => {
+      const registration = await tx.agentRegistration.create({
+        data: {
+          leagueId: league.id,
+          agentName,
+          description,
+          requestedScopes: JSON.stringify(requestedScopes),
+          mode,
+          status: "PENDING", // Awaiting commissioner approval
+          registrationToken: randomToken(20),
+          claimCode: code,
+          expiresAt,
+        },
+      });
 
-    await prisma.eventLog.create({
-      data: {
-        leagueId: league.id,
-        type: "AGENT_REGISTERED",
-        summary: `Public registration submitted: ${agentName}`,
-        entityType: "AGENT",
-        entityId: registration.id,
-        visibility: "LEAGUE_ONLY",
-        meta: JSON.stringify({ registrationId: registration.id, claimCode: registration.claimCode, mode, requestedScopes }),
-      },
+      // Create a real approval item so the commissioner queue shows the registration.
+      const task = await tx.task.create({
+        data: {
+          leagueId: league.id,
+          title: `External Agent Registration: ${agentName}`,
+          description: [
+            `${EXTERNAL_REG_MARKER} registrationId=${registration.id} claimCode=${registration.claimCode}`,
+            "",
+            `Mode: ${mode}`,
+            `Requested scopes: ${requestedScopes.join(", ")}`,
+            "",
+            `Agent description:`,
+            description || "(none)",
+          ].join("\n"),
+          status: "REVIEW",
+          tier: 1,
+          department: "COMMISSIONER",
+          acceptanceCriteria:
+            "Approve if the request looks legitimate and scopes are reasonable. Reject if suspicious or abusive.",
+          riskNotes:
+            "Approving grants an API key with the requested scopes. Review scopes and registration details carefully.",
+        },
+      });
+
+      const approval = await tx.approval.create({
+        data: {
+          leagueId: league.id,
+          taskId: task.id,
+          agentId: "commissioner",
+          tier: 1,
+          summary: `Review external agent registration: ${agentName} (${mode})`,
+          status: "PENDING",
+        },
+      });
+
+      await tx.eventLog.create({
+        data: {
+          leagueId: league.id,
+          agentId: "commissioner",
+          type: "AGENT_REGISTERED",
+          summary: `Public registration submitted: ${agentName}`,
+          entityType: "AGENT",
+          entityId: registration.id,
+          visibility: "LEAGUE_ONLY",
+          meta: JSON.stringify({
+            marker: EXTERNAL_REG_MARKER,
+            registrationId: registration.id,
+            claimCode: registration.claimCode,
+            mode,
+            requestedScopes,
+            approvalId: approval.id,
+            taskId: task.id,
+          }),
+        },
+      });
+
+      return { registration, approval };
     });
 
     return NextResponse.json({
-      registrationId: registration.id,
-      claimCode: registration.claimCode,
-      claimUrl: `/claim/${registration.claimCode}`,
-      expiresAt: registration.expiresAt,
+      registrationId: result.registration.id,
+      approvalId: result.approval.id,
+      claimCode: result.registration.claimCode,
+      claimUrl: `/claim/${result.registration.claimCode}`,
+      expiresAt: result.registration.expiresAt,
       nextStep:
         "Commissioner review is required. After approval, you can complete claim verification and receive your API key.",
     });

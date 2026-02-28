@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { RejectSchema } from "@afl/core";
 
+const EXTERNAL_REG_MARKER = "AFL_EXTERNAL_AGENT_REGISTRATION";
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -32,6 +34,38 @@ export async function POST(
         meta: JSON.stringify({ approvalId: id, tier: approval.tier, reason }),
       },
     });
+
+    // External agent registration approvals: flip registration to REJECTED so claim cannot proceed.
+    if (approval.taskId) {
+      const task = await prisma.task.findUnique({
+        where: { id: approval.taskId },
+        select: { id: true, leagueId: true, title: true, description: true },
+      });
+      if (task?.description && task.description.includes(EXTERNAL_REG_MARKER)) {
+        const m = task.description.match(/registrationId=([\\w-]+)/);
+        const registrationId = m?.[1];
+        if (registrationId) {
+          const updated = await prisma.agentRegistration.updateMany({
+            where: { id: registrationId, status: "PENDING" },
+            data: { status: "REJECTED" },
+          });
+          if (updated.count > 0) {
+            await prisma.eventLog.create({
+              data: {
+                leagueId: task.leagueId,
+                agentId: "commissioner",
+                type: "AGENT_REGISTRATION_REJECTED",
+                summary: `External agent registration rejected: ${task.title}. Reason: ${reason}`,
+                entityType: "AGENT",
+                entityId: registrationId,
+                visibility: "LEAGUE_ONLY",
+                meta: JSON.stringify({ marker: EXTERNAL_REG_MARKER, registrationId, approvalId: id, taskId: task.id, reason }),
+              },
+            });
+          }
+        }
+      }
+    }
 
     return NextResponse.json(approval);
   } catch (e) {

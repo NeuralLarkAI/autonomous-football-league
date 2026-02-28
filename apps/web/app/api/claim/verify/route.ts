@@ -17,18 +17,27 @@ export async function POST(req: NextRequest) {
       where: { claimCode },
     });
     if (!registration) return NextResponse.json({ error: "Claim not found" }, { status: 404 });
-    if (registration.status !== "PENDING") {
-      return NextResponse.json({ error: `Claim is ${registration.status}` }, { status: 409 });
+    // Only claimable after commissioner approval.
+    if (registration.status !== "APPROVED") {
+      return NextResponse.json(
+        { error: `Claim is ${registration.status}. Awaiting commissioner approval.` },
+        { status: 409 }
+      );
     }
     if (registration.expiresAt.getTime() < Date.now()) {
       await prisma.agentRegistration.update({ where: { id: registration.id }, data: { status: "EXPIRED" } });
       return NextResponse.json({ error: "Claim expired" }, { status: 410 });
     }
 
-    const membership = await prisma.leagueMember.findUnique({
+    // Allow self-service onboarding after approval: auto-enroll the claimant as a VIEWER member if needed.
+    let membership = await prisma.leagueMember.findUnique({
       where: { leagueId_userId: { leagueId: registration.leagueId, userId: user.id } },
     });
-    if (!membership) return NextResponse.json({ error: "Must be league member to claim" }, { status: 403 });
+    if (!membership) {
+      membership = await prisma.leagueMember.create({
+        data: { leagueId: registration.leagueId, userId: user.id, role: "VIEWER" },
+      });
+    }
 
     const requestedScopes = JSON.parse(registration.requestedScopes || "[]") as string[];
     const agent = await prisma.agent.create({

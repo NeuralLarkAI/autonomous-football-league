@@ -46,7 +46,8 @@ export async function POST(
         description,
         requestedScopes: JSON.stringify(requestedScopes),
         mode,
-        status: "PENDING",
+        // Admin-created registrations are implicitly approved.
+        status: "APPROVED",
         registrationToken: token,
         claimCode: code,
         expiresAt,

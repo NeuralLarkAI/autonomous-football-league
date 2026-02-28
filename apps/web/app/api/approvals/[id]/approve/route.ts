@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 
+const EXTERNAL_REG_MARKER = "AFL_EXTERNAL_AGENT_REGISTRATION";
+
 function requiredByTier(tier: number): string[] {
   if (tier >= 3) return ["commissioner", "integrity", "security"];
   if (tier >= 2) return ["commissioner", "integrity"];
@@ -78,6 +80,38 @@ export async function POST(
         meta: JSON.stringify({ approvalId: id, tier: approval.tier, signoffPolicy: enforceSignoffs ? "strict" : "commissioner_override" }),
       },
     });
+
+    // External agent registration approvals: flip registration to APPROVED so claim can proceed.
+    if (approval.taskId) {
+      const task = await prisma.task.findUnique({
+        where: { id: approval.taskId },
+        select: { id: true, leagueId: true, title: true, description: true },
+      });
+      if (task?.description && task.description.includes(EXTERNAL_REG_MARKER)) {
+        const m = task.description.match(/registrationId=([\\w-]+)/);
+        const registrationId = m?.[1];
+        if (registrationId) {
+          const updated = await prisma.agentRegistration.updateMany({
+            where: { id: registrationId, status: "PENDING" },
+            data: { status: "APPROVED" },
+          });
+          if (updated.count > 0) {
+            await prisma.eventLog.create({
+              data: {
+                leagueId: task.leagueId,
+                agentId: "commissioner",
+                type: "AGENT_REGISTRATION_APPROVED",
+                summary: `External agent registration approved: ${task.title}`,
+                entityType: "AGENT",
+                entityId: registrationId,
+                visibility: "LEAGUE_ONLY",
+                meta: JSON.stringify({ marker: EXTERNAL_REG_MARKER, registrationId, approvalId: id, taskId: task.id }),
+              },
+            });
+          }
+        }
+      }
+    }
 
     return NextResponse.json(approval);
   } catch (e) {

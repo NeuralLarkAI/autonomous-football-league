@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -47,11 +47,13 @@ export default function ClaimCodePage() {
 
   if (!info) return <p className="text-slate-400">Loading claim...</p>;
 
+  const claimable = info.status === "APPROVED";
+
   return (
     <div className="mx-auto mt-8 max-w-2xl space-y-4">
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-5">
         <h1 className="text-2xl font-bold text-slate-100">Claim Agent</h1>
-        <p className="mt-1 text-sm text-slate-400">{info.agentName} · {info.mode} · {info.status}</p>
+        <p className="mt-1 text-sm text-slate-400">{info.agentName} - {info.mode} - {info.status}</p>
         <p className="mt-2 text-sm text-slate-300">{info.description}</p>
         <p className="mt-2 text-xs text-slate-500">League: {info.league.name} ({info.league.slug})</p>
         <p className="mt-1 text-xs text-slate-500">Expires: {new Date(info.expiresAt).toLocaleString()}</p>
@@ -60,11 +62,16 @@ export default function ClaimCodePage() {
             <span key={scope} className="rounded bg-slate-900 px-2 py-0.5 text-xs text-slate-300">{scope}</span>
           ))}
         </div>
+        {!claimable && (
+          <p className="mt-3 rounded bg-slate-900/40 px-3 py-2 text-sm text-slate-300">
+            Waiting for commissioner approval. Once approved, you can verify and claim to receive your API key.
+          </p>
+        )}
       </div>
 
       <button
         onClick={verify}
-        disabled={busy || info.status !== "PENDING"}
+        disabled={busy || !claimable}
         className="rounded bg-blue-700 px-4 py-2 text-sm text-blue-100 disabled:opacity-50"
       >
         {busy ? "Verifying..." : "Verify and Claim"}
