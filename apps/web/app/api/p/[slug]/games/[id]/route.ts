@@ -38,7 +38,7 @@ export async function GET(
     });
     if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
 
-    const [drives, plays, boxScore] = await Promise.all([
+    const [drives, plays, boxScore, publicPosts] = await Promise.all([
       prisma.drive.findMany({
         where: { gameId: game.id },
         include: { offenseTeam: { select: { id: true, shortName: true, name: true } }, defenseTeam: { select: { id: true, shortName: true, name: true } } },
@@ -54,7 +54,61 @@ export async function GET(
         take: 120,
       }),
       prisma.boxScore.findUnique({ where: { gameId: game.id } }),
+      prisma.post.findMany({
+        where: {
+          leagueId: league.id,
+          visibility: "PUBLIC",
+          isHidden: false,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        include: {
+          authorAgent: { select: { id: true, name: true, department: true } },
+          reactions: true,
+          comments: true,
+        },
+      }),
     ]);
+
+    const weekTags = new Set([`week${game.week}`, `wk${game.week}`, `w${game.week}`].map((t) => t.toLowerCase()));
+    const teamTags = new Set([game.homeTeam.shortName, game.awayTeam.shortName, game.homeTeam.name, game.awayTeam.name].map((t) => t.toLowerCase()));
+
+    const chatPosts: Array<{
+      id: string;
+      title: string;
+      bodyMarkdown: string;
+      tagsParsed: string[];
+      createdAt: string;
+      authorAgent: { id: string; name: string; department: string } | null;
+      commentCount: number;
+      upvoteCount: number;
+      starCount: number;
+    }> = [];
+
+    for (const p of publicPosts) {
+      const tagsParsed = (p.tags ?? "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const tagsLower = tagsParsed.map((t) => t.toLowerCase());
+      const hitWeek = tagsLower.some((t) => weekTags.has(t));
+      const hitTeam = tagsLower.some((t) => teamTags.has(t));
+      if (!hitWeek && !hitTeam) continue;
+
+      chatPosts.push({
+        id: p.id,
+        title: p.title,
+        bodyMarkdown: p.bodyMarkdown,
+        tagsParsed,
+        createdAt: p.createdAt.toISOString(),
+        authorAgent: p.authorAgent ? { id: p.authorAgent.id, name: p.authorAgent.name, department: p.authorAgent.department } : null,
+        commentCount: p.comments.length,
+        upvoteCount: p.reactions.filter((r) => r.type === "UPVOTE").length,
+        starCount: p.reactions.filter((r) => r.type === "STAR").length,
+      });
+
+      if (chatPosts.length >= 40) break;
+    }
 
     return NextResponse.json({
       game: {
@@ -95,10 +149,10 @@ export async function GET(
         defenseTeam: p.defenseTeam,
       })),
       boxScore: boxScore ? JSON.parse(boxScore.statsJson) : emptyBox(),
+      chatPosts,
     });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "DB error" }, { status: 500 });
   }
 }
-

@@ -89,6 +89,7 @@ export async function POST(
     });
 
     // External agent registration approvals: flip registration to APPROVED so claim can proceed.
+    let approvedClaimCode: string | null = null;
     if (approval.taskId) {
       const task = await prisma.task.findUnique({
         where: { id: approval.taskId },
@@ -98,6 +99,8 @@ export async function POST(
         // cuid() ids are lowercase alnum; keep parsing simple and robust.
         const m = task.description.match(/registrationId=([a-z0-9]+)/i);
         const registrationId = m?.[1];
+        const claimMatch = task.description.match(/claimCode=([A-Z0-9-]+)/i);
+        approvedClaimCode = claimMatch?.[1]?.toUpperCase() ?? null;
         if (registrationId) {
           const updated = await prisma.agentRegistration.updateMany({
             where: { id: registrationId, status: "PENDING" },
@@ -119,6 +122,20 @@ export async function POST(
           }
         }
       }
+    }
+
+    const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+    if (webhookUrl) {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+      const claimUrl = approvedClaimCode ? `${baseUrl}/claim/${encodeURIComponent(approvedClaimCode)}` : null;
+      const content = claimUrl
+        ? `✅ **${approval.summary}** has been approved. Claim your API key at: ${claimUrl}`
+        : `✅ **${approval.summary}** has been approved.`;
+      void fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      }).catch(() => {});
     }
 
     return NextResponse.json(approval);

@@ -43,6 +43,7 @@ export async function POST(
     });
 
     // External agent registration approvals: flip registration to REJECTED so claim cannot proceed.
+    let rejectedClaimCode: string | null = null;
     if (approval.taskId) {
       const task = await prisma.task.findUnique({
         where: { id: approval.taskId },
@@ -52,6 +53,8 @@ export async function POST(
         // cuid() ids are lowercase alnum; keep parsing simple and robust.
         const m = task.description.match(/registrationId=([a-z0-9]+)/i);
         const registrationId = m?.[1];
+        const claimMatch = task.description.match(/claimCode=([A-Z0-9-]+)/i);
+        rejectedClaimCode = claimMatch?.[1]?.toUpperCase() ?? null;
         if (registrationId) {
           const updated = await prisma.agentRegistration.updateMany({
             where: { id: registrationId, status: "PENDING" },
@@ -73,6 +76,20 @@ export async function POST(
           }
         }
       }
+    }
+
+    const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+    if (webhookUrl) {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+      const claimUrl = rejectedClaimCode ? `${baseUrl}/claim/${encodeURIComponent(rejectedClaimCode)}` : null;
+      const content = claimUrl
+        ? `❌ **${approval.summary}** has been rejected. Reason: ${reason}. Claim: ${claimUrl}`
+        : `❌ **${approval.summary}** has been rejected. Reason: ${reason}.`;
+      void fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      }).catch(() => {});
     }
 
     return NextResponse.json(approval);

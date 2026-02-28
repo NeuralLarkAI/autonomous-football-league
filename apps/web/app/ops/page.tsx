@@ -29,6 +29,15 @@ type Health = {
   openIncidents: number;
 };
 
+type DashboardSummary = {
+  agentCount: number;
+  pendingApprovals: number;
+  autoRunEnabled: boolean;
+  seasonLock: boolean;
+  season: number;
+  phase: string;
+};
+
 const ALERT_TYPES = new Set(["REJECTED", "SEASON_LOCK", "DEFERRED", "INCIDENT_CREATED", "INCIDENT_RESOLVED"]);
 const KICKOFF_INCIDENT_PREFIXES = ["Kickoff incident created:", "Kickoff incident resolved:"];
 const SYNTHETIC_INCIDENT_TITLES = new Set([
@@ -75,13 +84,15 @@ export default function OpsPage() {
   const [events, setEvents] = useState<FeedEvent[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    const [eventsRes, incidentsRes, healthRes] = await Promise.all([
-      fetch("/api/feed?limit=100"),
+    const [eventsRes, incidentsRes, healthRes, dashboardRes] = await Promise.all([
+      fetch("/api/feed?take=100"),
       fetch("/api/incidents"),
       fetch("/api/ops/health"),
+      fetch("/api/dashboard"),
     ]);
     const [eventsData, incidentsData, healthData] = await Promise.all([
       eventsRes.json(),
@@ -92,6 +103,12 @@ export default function OpsPage() {
     setEvents(Array.isArray(eventsData) ? eventsData : []);
     setIncidents(Array.isArray(incidentsData) ? incidentsData : []);
     setHealth(healthRes.ok ? healthData : null);
+    if (dashboardRes.ok) {
+      const dash = await dashboardRes.json().catch(() => null);
+      setDashboard(dash && !dash.error ? (dash as DashboardSummary) : null);
+    } else {
+      setDashboard(null);
+    }
     setLoading(false);
   };
 
@@ -132,6 +149,41 @@ export default function OpsPage() {
         </Link>
       </div>
 
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <p className="text-xs text-slate-400">Agents Active</p>
+          <p className="text-2xl font-bold text-slate-100">{dashboard?.agentCount ?? "—"}</p>
+        </div>
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <p className="text-xs text-slate-400">Pending Approvals</p>
+          <p className="text-2xl font-bold text-slate-100">{dashboard?.pendingApprovals ?? "—"}</p>
+        </div>
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <p className="text-xs text-slate-400">Open Incidents</p>
+          <p className="text-2xl font-bold text-slate-100">{health?.openIncidents ?? 0}</p>
+        </div>
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <p className="text-xs text-slate-400">Auto-Run</p>
+          <p className="mt-1 inline-flex items-center gap-2">
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${
+                dashboard?.autoRunEnabled ? "bg-emerald-700/20 text-emerald-200 ring-emerald-500/30" : "bg-rose-700/20 text-rose-200 ring-rose-500/30"
+              }`}
+            >
+              {dashboard?.autoRunEnabled ? "ENABLED" : "DISABLED"}
+            </span>
+            {dashboard?.seasonLock ? (
+              <span className="rounded-full bg-amber-700/20 px-2 py-0.5 text-xs font-semibold text-amber-200 ring-1 ring-amber-500/30">
+                SEASON LOCK
+              </span>
+            ) : null}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {dashboard ? `Season ${dashboard.season} · ${dashboard.phase.replace(/_/g, " ")}` : ""}
+          </p>
+        </div>
+      </section>
+
       <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
           <p className="text-xs text-slate-400">Run Error Rate (24h)</p>
@@ -149,7 +201,9 @@ export default function OpsPage() {
         </div>
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
           <p className="text-xs text-slate-400">Approval Backlog</p>
-          <p className="text-sm text-slate-200">T1 {health?.approvalBacklogByTier?.["1"] ?? 0} ? T2 {health?.approvalBacklogByTier?.["2"] ?? 0} ? T3 {health?.approvalBacklogByTier?.["3"] ?? 0}</p>
+          <p className="text-sm text-slate-200">
+            T1 {health?.approvalBacklogByTier?.["1"] ?? 0} · T2 {health?.approvalBacklogByTier?.["2"] ?? 0} · T3 {health?.approvalBacklogByTier?.["3"] ?? 0}
+          </p>
         </div>
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
           <p className="text-xs text-slate-400">Open Incidents</p>

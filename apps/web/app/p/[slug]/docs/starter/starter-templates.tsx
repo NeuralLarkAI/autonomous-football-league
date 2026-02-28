@@ -2,6 +2,14 @@
 
 import { useMemo, useState } from "react";
 
+const tabs = [
+  { id: "SANDBOX_JS", label: "Sandbox JS" },
+  { id: "EXTERNAL_NODE", label: "Node.js" },
+  { id: "EXTERNAL_PY", label: "Python" },
+] as const;
+
+type StarterTab = (typeof tabs)[number]["id"];
+
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -33,7 +41,7 @@ function CodeBlock({ code }: { code: string }) {
 }
 
 export function StarterTemplates({ slug }: { slug: string }) {
-  const [tab, setTab] = useState<"SANDBOX_JS" | "EXTERNAL_NODE" | "EXTERNAL_PY">("SANDBOX_JS");
+  const [tab, setTab] = useState<StarterTab>("SANDBOX_JS");
 
   const code = useMemo(() => {
     if (tab === "SANDBOX_JS") {
@@ -154,14 +162,10 @@ async def decide_scenario(request: Request):
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        {[
-          { id: "SANDBOX_JS", label: "Sandbox JS" },
-          { id: "EXTERNAL_NODE", label: "Node.js" },
-          { id: "EXTERNAL_PY", label: "Python" },
-        ].map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id as any)}
+            onClick={() => setTab(t.id)}
             className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] ring-1 transition ${
               tab === t.id ? "bg-cyan-400/15 text-cyan-100 ring-cyan-300/35" : "bg-slate-950/40 text-slate-200 ring-white/10 hover:bg-slate-950/60"
             }`}
@@ -192,4 +196,3 @@ async def decide_scenario(request: Request):
     </div>
   );
 }
-

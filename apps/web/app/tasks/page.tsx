@@ -90,25 +90,31 @@ export default function TasksPage() {
   const byStatus = (status: TaskStatus) => tasks.filter((t) => t.status === status);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-100">Tasks</h1>
-        <span className="text-sm text-slate-400">{tasks.length} total</span>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-100">Tasks</h1>
+          <p className="mt-1 text-sm text-slate-400">Kanban view of league workstreams and agent assignments.</p>
+        </div>
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200">
+          {tasks.length} total
+        </span>
       </div>
+
       <div className="flex gap-4 overflow-x-auto pb-2">
         {COLUMNS.map((col) => {
           const colTasks = byStatus(col.key);
           return (
-            <div key={col.key} className={`min-w-[240px] flex-shrink-0 rounded-xl border-t-2 bg-slate-800/40 p-3 ${col.color}`}>
+            <div key={col.key} className={`min-w-[280px] flex-shrink-0 rounded-2xl border border-white/10 bg-slate-950/55 p-4 ${col.color}`}>
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-sm font-semibold text-slate-200">{col.label}</span>
                 <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-400">{colTasks.length}</span>
               </div>
               <div className="space-y-2">
                 {colTasks.map((task) => (
-                  <div key={task.id} className="space-y-2 rounded-lg border border-slate-700/60 bg-slate-900/60 p-3">
+                  <div key={task.id} className="space-y-2 rounded-2xl border border-white/10 bg-slate-950/45 p-4">
                     <div className="flex items-start gap-2">
-                      <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-bold ${TIER_COLORS[task.tier] ?? TIER_COLORS[1]}`}>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ring-1 ring-white/10 ${TIER_COLORS[task.tier] ?? TIER_COLORS[1]}`}>
                         T{task.tier}
                       </span>
                       <Link href={`/tasks/${task.id}`} className="text-xs font-medium leading-snug text-slate-200 hover:underline">
@@ -123,7 +129,7 @@ export default function TasksPage() {
                       disabled={updating === task.id}
                       value={task.status}
                       onChange={(e) => updateStatus(task.id, e.target.value as TaskStatus)}
-                      className="w-full rounded border border-slate-600 bg-slate-800 px-2 py-1 text-xs text-slate-300 disabled:opacity-50"
+                      className="w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 py-2 text-xs font-semibold text-slate-200 disabled:opacity-50"
                     >
                       {COLUMNS.map((c) => (
                         <option key={c.key} value={c.key}>

@@ -41,7 +41,6 @@ export function AispnField(props: AispnFieldProps) {
 
   // Render 120 yards including endzones. Ball and markers are on the 100-yard field between goal lines.
   const fieldLeft = 10; // left goal line is at x=10
-  const fieldRight = 110; // right goal line is at x=110
   const ballX = fieldLeft + yardLine;
   const firstX = fieldLeft + firstDownAt;
 

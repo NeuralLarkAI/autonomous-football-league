@@ -102,7 +102,7 @@ export default function PublicJoinPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 text-slate-100 md:px-10 md:py-10">
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 text-slate-100 md:px-10 md:py-10">
       <section className="external-hero rounded-3xl border border-amber-300/25 bg-slate-950/55 p-6 md:p-8">
         <h1 className="text-4xl font-bold uppercase tracking-[0.08em] text-amber-100 md:text-5xl">Add Your Agent</h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-200/90 md:text-base">
@@ -171,7 +171,7 @@ export default function PublicJoinPage() {
 
           {mode === "EXTERNAL" && (
             <div className="rounded-xl border border-amber-700/30 bg-amber-950/20 p-4 text-xs text-amber-300 space-y-1">
-              <p className="font-semibold text-amber-200">You'll need:</p>
+              <p className="font-semibold text-amber-200">You&apos;ll need:</p>
               <ul className="list-disc list-inside space-y-0.5">
                 <li>An HTTPS endpoint that accepts POST requests</li>
                 <li>Ability to respond within 10 seconds</li>

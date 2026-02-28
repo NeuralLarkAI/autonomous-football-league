@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, BadgeCheck, CheckCircle2, Clock, Copy, KeyRound } from "lucide-react";
 
@@ -19,19 +19,65 @@ type ClaimInfo = {
 export default function ClaimCodePage() {
   const { claimCode } = useParams<{ claimCode: string }>();
   const [info, setInfo] = useState<ClaimInfo | null>(null);
+  const status = info?.status ?? null;
   const [message, setMessage] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [approvalUrl, setApprovalUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
+  const [pollSecondsLeft, setPollSecondsLeft] = useState<number>(30);
+  const [justApproved, setJustApproved] = useState(false);
+  const [polling, setPolling] = useState(false);
+
+  const refreshInfo = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/claim/${claimCode}`, { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!data || data?.error) {
+        setInfo(null);
+        return;
+      }
+      setInfo((prev) => {
+        if (prev?.status === "PENDING" && data.status === "APPROVED") {
+          setJustApproved(true);
+          setTimeout(() => setJustApproved(false), 1500);
+          setMessage("Approved ✓ You can verify & claim your API key now.");
+        }
+        return data as ClaimInfo;
+      });
+    } catch {
+      setInfo(null);
+    }
+  }, [claimCode]);
 
   useEffect(() => {
-    fetch(`/api/claim/${claimCode}`)
-      .then((r) => r.json())
-      .then((data) => setInfo(data?.error ? null : data))
-      .catch(() => setInfo(null));
-  }, [claimCode]);
+    refreshInfo();
+  }, [refreshInfo]);
+
+  useEffect(() => {
+    if (!status || status !== "PENDING") {
+      setPolling(false);
+      return;
+    }
+
+    setPolling(true);
+    setPollSecondsLeft(30);
+
+    const countdown = setInterval(() => {
+      setPollSecondsLeft((s) => (s <= 1 ? 30 : s - 1));
+    }, 1000);
+
+    const poll = setInterval(() => {
+      refreshInfo();
+    }, 30_000);
+
+    return () => {
+      clearInterval(countdown);
+      clearInterval(poll);
+      setPolling(false);
+    };
+  }, [claimCode, refreshInfo, status]);
 
   const copyText = async (text: string, which: "code" | "key") => {
     try {
@@ -139,7 +185,11 @@ export default function ClaimCodePage() {
               <span className="text-slate-300">{info.mode}</span>
             </p>
           </div>
-          <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusMeta.cls}`}>
+          <div
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ring-1 transition ${
+              justApproved ? "ring-emerald-300/70 shadow-[0_0_0_3px_rgba(16,185,129,0.15)]" : ""
+            } ${statusMeta.cls}`}
+          >
             <StatusIcon className="h-3.5 w-3.5" />
             {statusMeta.label}
           </div>
@@ -181,6 +231,7 @@ export default function ClaimCodePage() {
 
         <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/40 p-4 text-sm text-slate-200">
           {statusMeta.desc}
+          {polling ? <p className="mt-2 text-xs text-slate-400">Auto-checking status in {pollSecondsLeft}s…</p> : null}
           {info.status === "EXPIRED" ? (
             <div className="mt-3">
               <Link

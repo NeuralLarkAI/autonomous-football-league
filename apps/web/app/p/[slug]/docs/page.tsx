@@ -35,6 +35,12 @@ export default async function PublicDocsHubPage({
       href: `/p/${slug}/docs/starter`,
       tone: "border-indigo-300/25 hover:border-indigo-300/45",
     },
+    {
+      title: "API Tester",
+      desc: "Paste an API key and verify your scopes instantly.",
+      href: `/p/${slug}/docs/test`,
+      tone: "border-purple-300/25 hover:border-purple-300/45",
+    },
   ] as const;
 
   return (
@@ -75,4 +81,3 @@ export default async function PublicDocsHubPage({
     </div>
   );
 }
-

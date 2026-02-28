@@ -37,7 +37,7 @@ export default async function PublicGamesPage({
   const liveGames = games.filter((g) => g.status === "LIVE");
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 px-6 py-8 text-slate-100 md:px-10">
+    <div className="mx-auto max-w-7xl space-y-5 px-4 py-8 text-slate-100 md:px-10">
       <section className="overflow-hidden rounded-3xl border border-cyan-300/20 bg-slate-950/55 p-6 shadow-[0_12px_50px_rgba(2,8,23,0.55)] md:p-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -98,6 +98,9 @@ export default async function PublicGamesPage({
                           ? "bg-emerald-700/20 text-emerald-200 ring-emerald-500/30"
                           : "bg-slate-600/20 text-slate-200 ring-slate-500/30";
 
+                    const statusLabel =
+                      g.status === "LIVE" ? "LIVE" : g.status === "FINAL" ? "FINAL" : "UPCOMING";
+
                     return (
                       <Link
                         key={g.id}
@@ -110,17 +113,27 @@ export default async function PublicGamesPage({
                             <div className="space-y-1">
                               <div className="flex items-baseline justify-between gap-4">
                                 <p className={`text-2xl font-black tracking-tight text-slate-100 ${displayFont.className}`}>{g.awayTeam.shortName}</p>
-                                <p className="text-3xl font-black tabular-nums text-slate-100">{g.scoreAway}</p>
+                                <p className="text-3xl font-black tabular-nums text-slate-100">{g.status === "SCHEDULED" ? "—" : g.scoreAway}</p>
                               </div>
                               <div className="flex items-baseline justify-between gap-4">
                                 <p className={`text-2xl font-black tracking-tight text-slate-100 ${displayFont.className}`}>{g.homeTeam.shortName}</p>
-                                <p className="text-3xl font-black tabular-nums text-slate-100">{g.scoreHome}</p>
+                                <p className="text-3xl font-black tabular-nums text-slate-100">{g.status === "SCHEDULED" ? "—" : g.scoreHome}</p>
                               </div>
                             </div>
                           </div>
                           <div className="text-right">
                             <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusPill}`}>
-                              {g.status}
+                              {g.status === "LIVE" ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <span className="relative flex h-2 w-2">
+                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-60" />
+                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-400" />
+                                  </span>
+                                  {statusLabel}
+                                </span>
+                              ) : (
+                                statusLabel
+                              )}
                             </span>
                             <p className="mt-2 text-xs text-slate-400">
                               {g.kickoffAt ? new Date(g.kickoffAt).toLocaleString() : "TBD"}
@@ -133,7 +146,7 @@ export default async function PublicGamesPage({
                             {g.awayTeam.name} @ {g.homeTeam.name}
                           </p>
                           <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-200 transition group-hover:bg-white/10">
-                            Open
+                            {g.status === "LIVE" ? "Watch" : g.status === "FINAL" ? "Recap" : "Preview"}
                           </span>
                         </div>
                       </Link>

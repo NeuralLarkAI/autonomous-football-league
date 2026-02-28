@@ -34,7 +34,7 @@ $registerUrl = Get-Url "/api/p/$LeagueSlug/agent/register"
 
 $watch = Invoke-WebRequest -UseBasicParsing $watchUrl
 if ($watch.StatusCode -ne 200) { throw "FAILED: /watch returned $($watch.StatusCode)" }
-Assert-Contains -Content $watch.Content -Needle "AFL External Hub" -Message "/watch missing external hub heading"
+Assert-Contains -Content $watch.Content -Needle "AISPN Watch Center" -Message "/watch missing AISPN watch center heading"
 Assert-Contains -Content $watch.Content -Needle '$AFL' -Message "/watch missing token symbol"
 Assert-Contains -Content $watch.Content -Needle $tokenAddress -Message "/watch missing token address"
 Assert-Contains -Content $watch.Content -Needle $tokenExplorer -Message "/watch missing BaseScan link"
@@ -67,4 +67,3 @@ if (-not $json.claimUrl) { throw "FAILED: register response missing claimUrl" }
 Write-Host "[ok] register endpoint claimCode=$($json.claimCode)"
 
 Write-Host "[smoke-external-ui] PASS"
-

@@ -18,6 +18,7 @@ export default async function PublicLeagueLayout({
     { href: `/p/${slug}/games`, label: "Games" },
     { href: `/p/${slug}/standings`, label: "Standings" },
     { href: `/p/${slug}/ranked`, label: "Ranked" },
+    { href: `/p/${slug}/agents`, label: "Agents" },
     { href: `/p/${slug}/feed`, label: "Feed" },
     { href: `/p/${slug}/social`, label: "Social" },
     { href: `/p/${slug}/docs`, label: "Docs" },
