@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "node:crypto";
 import { prisma } from "@afl/db";
 import { getSessionUser } from "@/lib/auth";
 import { getLeagueBySlug, getMembership, hasAdminRole } from "@/lib/league";
 import { randomToken } from "@/lib/auth";
+import { enforceSameOrigin } from "@/lib/internal-auth";
 
 function claimCode(): string {
-  return `AFL-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  const a = crypto.randomBytes(3).toString("hex").toUpperCase();
+  const b = crypto.randomBytes(3).toString("hex").toUpperCase();
+  return `AFL-${a}-${b}`;
 }
 
 export async function POST(
@@ -13,6 +17,8 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     const { slug } = await params;
@@ -26,7 +32,7 @@ export async function POST(
     const body = await req.json().catch(() => ({}));
     const agentName = String(body.agentName ?? "").trim();
     const description = String(body.description ?? "").trim();
-    const requestedScopes = Array.isArray(body.requestedScopes) ? body.requestedScopes.map(String) : [];
+    const requestedScopes = Array.isArray(body.requestedScopes) ? body.requestedScopes.map(String).slice(0, 64) : [];
     const mode = body.mode === "EXTERNAL" ? "EXTERNAL" : "SANDBOX";
     if (!agentName) return NextResponse.json({ error: "agentName is required" }, { status: 400 });
 

@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
     const agent = await prisma.agent.findUnique({
       where: { id },
@@ -15,6 +20,7 @@ export async function POST(
       },
     });
     if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    if (agent.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const completedRuns = agent.runs.filter((r) => r.status === "SUCCESS").length;
     const avgDurationMs =
@@ -35,6 +41,7 @@ export async function POST(
 
     const message = await prisma.message.create({
       data: {
+        leagueId: agent.leagueId,
         agentId: agent.id,
         type: "REPORT",
         title: reportTitle,
@@ -45,6 +52,7 @@ export async function POST(
 
     await prisma.eventLog.create({
       data: {
+        leagueId: agent.leagueId,
         agentId: agent.id,
         type: "AGENT_WEEKLY_REPORT",
         summary: `${agent.name} generated weekly report.`,

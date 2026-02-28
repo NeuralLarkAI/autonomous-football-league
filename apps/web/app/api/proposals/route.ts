@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { CreateProposalSchema } from "@afl/core";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireActiveLeagueMember();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status") ?? undefined;
     const tier = searchParams.get("tier");
 
     const proposals = await prisma.proposal.findMany({
       where: {
+        leagueId: auth.league.id,
         status: status ?? undefined,
         tier: tier ? Number(tier) : undefined,
       },
@@ -29,6 +33,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const body = await req.json();
     const parsed = CreateProposalSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -36,6 +44,7 @@ export async function POST(req: NextRequest) {
 
     const proposal = await prisma.proposal.create({
       data: {
+        leagueId: auth.league.id,
         title: data.title,
         summary: data.summary,
         tier: data.tier,
@@ -54,6 +63,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.approval.create({
       data: {
+        leagueId: auth.league.id,
         proposalId: proposal.id,
         agentId: data.creatorAgentId ?? "commissioner",
         tier: data.tier,
@@ -65,6 +75,7 @@ export async function POST(req: NextRequest) {
     if (data.requiredSignoffs.length > 0) {
       await prisma.signoff.createMany({
         data: data.requiredSignoffs.map((agentId) => ({
+          leagueId: auth.league.id,
           proposalId: proposal.id,
           agentId,
           status: "REQUESTED",
@@ -75,6 +86,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.eventLog.create({
       data: {
+        leagueId: auth.league.id,
         agentId: data.creatorAgentId,
         type: "PROPOSAL_CREATED",
         tier: proposal.tier,

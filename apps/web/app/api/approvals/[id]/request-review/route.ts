@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { RequestReviewSchema } from "@afl/core";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
     const approval = await prisma.approval.findUnique({ where: { id } });
     if (!approval || !approval.proposalId) {
       return NextResponse.json({ error: "Approval proposal not found" }, { status: 404 });
     }
+    if (approval.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await req.json();
     const parsed = RequestReviewSchema.safeParse(body);
@@ -19,6 +25,7 @@ export async function POST(
 
     const reviewRequest = await prisma.reviewRequest.create({
       data: {
+        leagueId: approval.leagueId,
         proposalId: approval.proposalId,
         requesterAgentId: parsed.data.requesterAgentId,
         targetAgentId: parsed.data.targetAgentId,
@@ -28,6 +35,7 @@ export async function POST(
 
     await prisma.eventLog.create({
       data: {
+        leagueId: approval.leagueId,
         agentId: parsed.data.requesterAgentId,
         type: "REVIEW_REQUESTED",
         tier: approval.tier,

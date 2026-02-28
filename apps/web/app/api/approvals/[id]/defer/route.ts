@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
     const existing = await prisma.approval.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ error: "Approval not found" }, { status: 404 });
+    if (existing.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     if (existing.status !== "PENDING") {
       return NextResponse.json({ error: "Approval is not pending" }, { status: 409 });
     }
@@ -20,6 +26,7 @@ export async function POST(
 
     await prisma.eventLog.create({
       data: {
+        leagueId: existing.leagueId,
         agentId: approval.agentId,
         type: "DEFERRED",
         tier: approval.tier,

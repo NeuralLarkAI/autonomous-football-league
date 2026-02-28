@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { RejectSchema } from "@afl/core";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 const EXTERNAL_REG_MARKER = "AFL_EXTERNAL_AGENT_REGISTRATION";
 
@@ -9,6 +10,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
     const parsed = RejectSchema.safeParse(body);
@@ -16,6 +21,7 @@ export async function POST(
 
     const existing = await prisma.approval.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ error: "Approval not found" }, { status: 404 });
+    if (existing.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     if (existing.status !== "PENDING") {
       return NextResponse.json({ error: "Approval is not pending" }, { status: 409 });
     }
@@ -28,6 +34,7 @@ export async function POST(
 
     await prisma.eventLog.create({
       data: {
+        leagueId: existing.leagueId,
         agentId: approval.agentId,
         type: "REJECTED",
         summary: `Approval #${id.slice(-6)} REJECTED - ${approval.summary}. Reason: ${reason}`,

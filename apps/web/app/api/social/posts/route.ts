@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { CreateSocialPostSchema } from "@afl/core";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 function splitTags(value: string): string[] {
   return value
@@ -11,6 +12,8 @@ function splitTags(value: string): string[] {
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireActiveLeagueMember();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { searchParams } = new URL(req.url);
     const visibility = searchParams.get("visibility");
     const tag = searchParams.get("tag");
@@ -18,6 +21,7 @@ export async function GET(req: NextRequest) {
 
     const posts = await prisma.post.findMany({
       where: {
+        leagueId: auth.league.id,
         isHidden: false,
         visibility: visibility ?? undefined,
         tags: tag ? { contains: tag } : undefined,
@@ -57,6 +61,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const body = await req.json();
     const parsed = CreateSocialPostSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -70,6 +78,7 @@ export async function POST(req: NextRequest) {
     const tags = (parsed.data.tags ?? []).map((t) => t.trim()).filter(Boolean).join(",");
     const post = await prisma.post.create({
       data: {
+        leagueId: auth.league.id,
         authorAgentId,
         title: parsed.data.title,
         bodyMarkdown: parsed.data.bodyMarkdown,
@@ -83,6 +92,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.eventLog.create({
       data: {
+        leagueId: auth.league.id,
         agentId: authorAgentId ?? undefined,
         type: "SOCIAL_POST_CREATED",
         summary: `Social post created: ${post.title}`,

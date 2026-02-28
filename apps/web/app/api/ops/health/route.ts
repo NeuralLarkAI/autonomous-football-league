@@ -1,22 +1,25 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@afl/db";
+import { requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function GET() {
   try {
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const now = new Date();
     const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     const [runs24h, created7d, completed7d, pendingApprovalsByTier, openIncidents] = await Promise.all([
-      prisma.agentRun.findMany({ where: { startedAt: { gte: dayAgo } } }),
-      prisma.task.count({ where: { createdAt: { gte: weekAgo } } }),
-      prisma.task.count({ where: { status: "DONE", updatedAt: { gte: weekAgo } } }),
+      prisma.agentRun.findMany({ where: { leagueId: auth.league.id, startedAt: { gte: dayAgo } } }),
+      prisma.task.count({ where: { leagueId: auth.league.id, createdAt: { gte: weekAgo } } }),
+      prisma.task.count({ where: { leagueId: auth.league.id, status: "DONE", updatedAt: { gte: weekAgo } } }),
       prisma.approval.groupBy({
         by: ["tier"],
-        where: { status: "PENDING" },
+        where: { leagueId: auth.league.id, status: "PENDING" },
         _count: { _all: true },
       }),
-      prisma.incident.count({ where: { status: { not: "RESOLVED" } } }),
+      prisma.incident.count({ where: { leagueId: auth.league.id, status: { not: "RESOLVED" } } }),
     ]);
 
     const totalRuns = runs24h.length;

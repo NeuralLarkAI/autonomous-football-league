@@ -29,24 +29,32 @@ export async function GET(
     },
     orderBy: [{ rating: "desc" }, { updatedAt: "asc" }],
   });
-  const rows = await Promise.all(
-    ratings.map(async (r) => {
-      const latest = await prisma.agentSubmission.findFirst({
-        where: { leagueId: league.id, agentId: r.agentId },
-        orderBy: { version: "desc" },
-      });
-      return {
-        id: r.id,
-        agentId: r.agentId,
-        agentName: r.agent.name,
-        mode: r.agent.mode,
-        rating: r.rating,
-        matches: r.matches,
-        eligibility: r.agent.mode === "SANDBOX" && latest?.status === "RANKED_APPROVED" ? "ELIGIBLE" : "INELIGIBLE",
-        latestSubmissionStatus: latest?.status ?? "NONE",
-      };
-    })
-  );
+
+  const agentIds = ratings.map((r) => r.agentId);
+  const latestByAgentId = new Map<string, { status: string }>();
+  if (agentIds.length > 0) {
+    const latestSubs = await prisma.agentSubmission.findMany({
+      where: { leagueId: league.id, agentId: { in: agentIds } },
+      orderBy: [{ agentId: "asc" }, { version: "desc" }],
+      distinct: ["agentId"],
+      select: { agentId: true, status: true },
+    });
+    for (const s of latestSubs) latestByAgentId.set(s.agentId, { status: s.status });
+  }
+
+  const rows = ratings.map((r) => {
+    const latest = latestByAgentId.get(r.agentId) ?? null;
+    return {
+      id: r.id,
+      agentId: r.agentId,
+      agentName: r.agent.name,
+      mode: r.agent.mode,
+      rating: r.rating,
+      matches: r.matches,
+      eligibility: r.agent.mode === "SANDBOX" && latest?.status === "RANKED_APPROVED" ? "ELIGIBLE" : "INELIGIBLE",
+      latestSubmissionStatus: latest?.status ?? "NONE",
+    };
+  });
 
   const matches = await prisma.rankedMatch.findMany({
     where: { leagueId: league.id },

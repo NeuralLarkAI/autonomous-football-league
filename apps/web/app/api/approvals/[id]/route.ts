@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
+import { requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireActiveLeagueMember();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
     const approval = await prisma.approval.findUnique({
       where: { id },
@@ -27,6 +30,7 @@ export async function GET(
       },
     });
     if (!approval) return NextResponse.json({ error: "Approval not found" }, { status: 404 });
+    if (approval.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     return NextResponse.json(approval);
   } catch (e) {
     console.error(e);

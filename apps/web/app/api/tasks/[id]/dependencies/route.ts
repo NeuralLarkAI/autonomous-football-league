@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { AddTaskDependencySchema, RemoveTaskDependencySchema } from "@afl/core";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireActiveLeagueMember();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
+    const task = await prisma.task.findUnique({ where: { id }, select: { leagueId: true } });
+    if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    if (task.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const dependencies = await prisma.taskDependency.findMany({
       where: { taskId: id },
       include: {
@@ -27,6 +33,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
     const body = await req.json();
     const parsed = AddTaskDependencySchema.safeParse(body);
@@ -42,16 +52,19 @@ export async function POST(
       prisma.task.findUnique({ where: { id: dependsOnTaskId } }),
     ]);
     if (!task || !depTask) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    if (task.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (depTask.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const created = await prisma.taskDependency.upsert({
       where: { taskId_dependsOnTaskId: { taskId: id, dependsOnTaskId } },
       update: {},
-      create: { taskId: id, dependsOnTaskId },
+      create: { leagueId: task.leagueId, taskId: id, dependsOnTaskId },
       include: { dependsOnTask: { select: { id: true, title: true, status: true } } },
     });
 
     await prisma.eventLog.create({
       data: {
+        leagueId: task.leagueId,
         type: "TASK_UPDATED",
         tier: task.tier,
         summary: `Dependency added: "${task.title}" depends on "${depTask.title}"`,
@@ -74,6 +87,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
     const body = await req.json();
     const parsed = RemoveTaskDependencySchema.safeParse(body);
@@ -84,6 +101,9 @@ export async function DELETE(
       where: { taskId_dependsOnTaskId: { taskId: id, dependsOnTaskId } },
     });
     if (!existing) return NextResponse.json({ error: "Dependency not found" }, { status: 404 });
+    const task = await prisma.task.findUnique({ where: { id }, select: { leagueId: true } });
+    if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    if (task.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     await prisma.taskDependency.delete({
       where: { taskId_dependsOnTaskId: { taskId: id, dependsOnTaskId } },

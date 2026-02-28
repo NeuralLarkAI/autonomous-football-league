@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -175,6 +175,9 @@ model Agent {
   rankedWins       RankedMatch[] @relation("RankedMatchWinner")
   abuseEvents      AbuseEvent[]
   coachedTeams     Team[] @relation("TeamCoach")
+
+  @@index([leagueId, status])
+  @@index([leagueId, department])
 }
 
 model Task {
@@ -201,6 +204,8 @@ model Task {
   events       EventLog[]
   dependencies TaskDependency[] @relation("TaskDependencies")
   blockedBy    TaskDependency[] @relation("TaskBlockedBy")
+
+  @@index([leagueId, status])
 }
 
 model TaskDependency {
@@ -243,6 +248,8 @@ model Proposal {
   signoffs       Signoff[]
   reviewRequests ReviewRequest[]
   events         EventLog[]
+
+  @@index([leagueId, status, createdAt])
 }
 
 model Approval {
@@ -263,6 +270,8 @@ model Approval {
   updatedAt  DateTime @updatedAt
 
   events EventLog[]
+
+  @@index([leagueId, status, tier])
 }
 
 model Signoff {
@@ -346,6 +355,9 @@ model Post {
   reactions  Reaction[]
   moderation ModerationAction[]
   events     EventLog[]
+
+  @@index([leagueId, createdAt])
+  @@index([leagueId, isHidden, createdAt])
 }
 
 model Comment {
@@ -558,6 +570,10 @@ model EventLog {
   playId     String?
   play       Play?      @relation(fields: [playId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
+
+  @@index([leagueId, createdAt])
+  @@index([leagueId, agentId, createdAt])
+  @@index([leagueId, type, createdAt])
 }
 
 model AgentRegistration {

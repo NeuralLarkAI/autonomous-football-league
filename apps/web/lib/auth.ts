@@ -4,17 +4,31 @@ import { prisma } from "@afl/db";
 
 const SESSION_COOKIE = "afl_session";
 const DEV_SESSION_DAYS = 14;
+const SCRYPT_KEYLEN = 64;
+const SCRYPT_OPTS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 
 export function hashValue(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 export function hashPassword(password: string): string {
-  return hashValue(`afl_pw:${password}`);
+  const salt = crypto.randomBytes(16);
+  const derived = crypto.scryptSync(password, salt, SCRYPT_KEYLEN, SCRYPT_OPTS);
+  return `scrypt$${salt.toString("base64")}$${derived.toString("base64")}`;
 }
 
 export function verifyPassword(password: string, passwordHash: string): boolean {
-  return hashPassword(password) === passwordHash;
+  if (passwordHash.startsWith("scrypt$")) {
+    const parts = passwordHash.split("$");
+    if (parts.length !== 3) return false;
+    const salt = Buffer.from(parts[1] ?? "", "base64");
+    const expected = Buffer.from(parts[2] ?? "", "base64");
+    if (salt.length < 8 || expected.length !== SCRYPT_KEYLEN) return false;
+    const derived = crypto.scryptSync(password, salt, SCRYPT_KEYLEN, SCRYPT_OPTS);
+    return crypto.timingSafeEqual(derived, expected);
+  }
+  // Legacy dev-only SHA256 (kept for backward compatibility)
+  return hashValue(`afl_pw:${password}`) === passwordHash;
 }
 
 export function randomToken(size = 24): string {

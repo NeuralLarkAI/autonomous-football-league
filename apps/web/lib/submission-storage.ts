@@ -14,7 +14,13 @@ function uploadsRoot() {
 }
 
 export function submissionAbsolutePath(filePath: string) {
-  return path.resolve(process.cwd(), filePath);
+  const root = uploadsRoot();
+  const resolved = path.resolve(process.cwd(), filePath);
+  const normalizedRoot = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  if (!resolved.startsWith(normalizedRoot)) {
+    throw new Error("Invalid file path");
+  }
+  return resolved;
 }
 
 export async function storeSubmissionArtifact(input: {

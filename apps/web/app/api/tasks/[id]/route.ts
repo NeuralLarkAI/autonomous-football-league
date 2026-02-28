@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { PatchTaskSchema } from "@afl/core";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireActiveLeagueMember();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
     const task = await prisma.task.findUnique({
       where: { id },
@@ -26,6 +29,7 @@ export async function GET(
       },
     });
     if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    if (task.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     return NextResponse.json(task);
   } catch (e) {
     console.error(e);
@@ -38,6 +42,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
     const body = await req.json();
     const parsed = PatchTaskSchema.safeParse(body);
@@ -47,6 +55,7 @@ export async function PATCH(
 
     const existingTask = await prisma.task.findUnique({ where: { id } });
     if (!existingTask) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    if (existingTask.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     if (parsed.data.status === "DONE") {
       const unmetDependencies = await prisma.taskDependency.findMany({
@@ -71,6 +80,7 @@ export async function PATCH(
 
     await prisma.eventLog.create({
       data: {
+        leagueId: existingTask.leagueId,
         type: "TASK_UPDATED",
         tier: task.tier,
         summary: `Task "${task.title}" updated to ${task.status}`,

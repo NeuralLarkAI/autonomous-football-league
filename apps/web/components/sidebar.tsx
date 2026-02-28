@@ -3,24 +3,42 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Bot,
+  BookOpen,
+  Cable,
+  CalendarRange,
+  CheckSquare,
+  FlaskConical,
+  Gamepad2,
+  LayoutDashboard,
+  Newspaper,
+  Radio,
+  ShieldCheck,
+  Table2,
+  Trophy,
+} from "lucide-react";
 
 const NAV = [
-  { path: "/dashboard", label: "Dashboard", icon: "[]" },
-  { path: "/agents", label: "Agents", icon: "<>" },
-  { path: "/tasks", label: "Tasks", icon: "##" },
-  { path: "/games", label: "Games", icon: "GM" },
-  { path: "/standings", label: "Standings", icon: "ST" },
-  { path: "/approvals", label: "Approvals", icon: "OK" },
-  { path: "/social", label: "Social", icon: "MB" },
-  { path: "/combine", label: "Combine", icon: "CB" },
-  { path: "/ranked", label: "Ranked", icon: "RD" },
-  { path: "/season", label: "Season", icon: "S0" },
-  { path: "/runbooks", label: "Runbooks", icon: "RB" },
-  { path: "/connect", label: "Connect", icon: "CN" },
-  { path: "/incidents", label: "Incidents", icon: "!!" },
-  { path: "/ops", label: "Ops", icon: "{}" },
-  { path: "/feed", label: "Activity Feed", icon: ".." },
-];
+  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/agents", label: "Agents", icon: Bot },
+  { path: "/tasks", label: "Tasks", icon: CheckSquare },
+  { path: "/games", label: "Games", icon: Gamepad2 },
+  { path: "/standings", label: "Standings", icon: Table2 },
+  { path: "/approvals", label: "Approvals", icon: ShieldCheck },
+  { path: "/social", label: "Social", icon: Newspaper },
+  { path: "/combine", label: "Combine", icon: FlaskConical },
+  { path: "/ranked", label: "Ranked", icon: Trophy },
+  { path: "/season", label: "Season", icon: CalendarRange },
+  { path: "/runbooks", label: "Runbooks", icon: BookOpen },
+  { path: "/connect", label: "Connect", icon: Cable },
+  { path: "/incidents", label: "Incidents", icon: AlertTriangle },
+  { path: "/ops", label: "Ops", icon: Activity },
+  { path: "/feed", label: "Activity Feed", icon: Radio },
+] satisfies Array<{ path: string; label: string; icon: LucideIcon }>;
 
 type LeagueItem = { id: string; name: string; slug: string; role: string };
 
@@ -95,7 +113,9 @@ export function Sidebar() {
                   : "text-slate-400 hover:bg-slate-700/40 hover:text-slate-200"
               }`}
             >
-              <span className="w-6 text-center text-xs">{item.icon}</span>
+              <span className="w-6 text-center text-xs">
+                <item.icon size={16} className={active ? "text-blue-400" : "text-slate-400"} />
+              </span>
               {item.label}
             </Link>
           );

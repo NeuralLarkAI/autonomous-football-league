@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
-import { getActiveLeague } from "@/lib/request-league";
+import { requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const activeLeague = await getActiveLeague();
+    const auth = await requireActiveLeagueMember();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { searchParams } = new URL(req.url);
     const agentId = searchParams.get("agentId");
     const runType = searchParams.get("runType");
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest) {
 
     const runs = await prisma.combineRun.findMany({
       where: {
-        leagueId: activeLeague.id,
+        leagueId: auth.league.id,
         agentId: agentId ?? undefined,
         runType: runType ?? undefined,
         status: status ?? undefined,

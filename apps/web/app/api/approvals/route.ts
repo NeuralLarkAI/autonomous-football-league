@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@afl/db";
+import { requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function GET() {
   try {
+    const auth = await requireActiveLeagueMember();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const approvals = await prisma.approval.findMany({
-      where: { status: "PENDING" },
+      where: { leagueId: auth.league.id, status: "PENDING" },
       orderBy: { createdAt: "desc" },
       include: {
         agent: { select: { id: true, name: true, department: true } },

@@ -87,13 +87,24 @@ function normalizeCoachSource(source: string): string {
 
 async function executeCoachSubmission(sourceCode: string, payload: unknown, seed: number): Promise<unknown> {
   const deterministicRandom = mulberry32(seed);
+  class DeterministicDate extends Date {
+    constructor(...args: any[]) {
+      // If a coach calls `new Date()` without args, make it deterministic (epoch).
+      // If args are provided, preserve standard Date parsing semantics.
+      if (args.length === 0) super(0);
+      else super(...(args as [any]));
+    }
+    static now() {
+      return 0;
+    }
+  }
   const sandbox = {
     module: { exports: {} as Record<string, unknown> },
     exports: {} as Record<string, unknown>,
     console: { log: () => {}, warn: () => {}, error: () => {} },
     Math: { ...Math, random: deterministicRandom },
     JSON,
-    Date,
+    Date: DeterministicDate,
     setTimeout: undefined,
     setInterval: undefined,
     fetch: undefined,

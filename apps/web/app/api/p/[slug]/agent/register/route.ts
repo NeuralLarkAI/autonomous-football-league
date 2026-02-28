@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "node:crypto";
 import { prisma } from "@afl/db";
 import { randomToken } from "@/lib/auth";
+import { enforceIpRateLimit } from "@/lib/ip-rate-limit";
 
 const EXTERNAL_REG_MARKER = "AFL_EXTERNAL_AGENT_REGISTRATION";
 
 function claimCode(): string {
-  return `AFL-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  const a = crypto.randomBytes(3).toString("hex").toUpperCase();
+  const b = crypto.randomBytes(3).toString("hex").toUpperCase();
+  return `AFL-${a}-${b}`;
 }
 
 const DEFAULT_SCOPES = [
@@ -22,6 +26,8 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const rl = enforceIpRateLimit(req, { key: "public_agent_register", limit: 20, windowMs: 10 * 60 * 1000 });
+    if (!rl.ok) return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
     const { slug } = await params;
     const league = await prisma.league.findUnique({
       where: { slug },

@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { CreateSeasonPhaseSchema } from "@afl/core";
 import { getActiveLeague } from "@/lib/request-league";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function GET() {
   try {
+    const auth = await requireActiveLeagueMember();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const league = await getActiveLeague();
     const phases = await prisma.seasonPhase.findMany({
       where: { leagueId: league.id },
@@ -19,6 +22,10 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const league = await getActiveLeague();
     const body = await req.json();
     const parsed = CreateSeasonPhaseSchema.safeParse(body);

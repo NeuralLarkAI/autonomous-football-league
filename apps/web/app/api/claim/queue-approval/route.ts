@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
+import { enforceSameOrigin } from "@/lib/internal-auth";
+import { enforceIpRateLimit } from "@/lib/ip-rate-limit";
 
 const EXTERNAL_REG_MARKER = "AFL_EXTERNAL_AGENT_REGISTRATION";
 
 export async function POST(req: NextRequest) {
   try {
+    const rl = enforceIpRateLimit(req, { key: "claim_queue_approval", limit: 30, windowMs: 10 * 60 * 1000 });
+    if (!rl.ok) return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
     const body = await req.json().catch(() => ({}));
-    const claimCode = String(body.claimCode ?? "").trim();
+    const claimCode = String(body.claimCode ?? "").trim().toUpperCase();
     if (!claimCode) return NextResponse.json({ error: "claimCode required" }, { status: 400 });
+    if (claimCode.length > 32 || !/^AFL-[A-Z0-9]{4,12}-[A-Z0-9]{4,12}$/.test(claimCode)) {
+      return NextResponse.json({ error: "Invalid claim code format" }, { status: 400 });
+    }
 
     const registration = await prisma.agentRegistration.findUnique({
       where: { claimCode },
@@ -115,4 +124,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Queue approval failed" }, { status: 500 });
   }
 }
-

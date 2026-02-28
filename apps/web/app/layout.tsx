@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ensureAutoRunWorkerStarted } from "@/lib/autorun-worker";
+import { ToasterProvider } from "@/components/toaster-provider";
 
 // All pages are live/database-driven — skip static prerendering at build time.
 // This also avoids Railway's non-standard NODE_ENV causing the dev RSC runtime
@@ -22,7 +23,10 @@ export default function RootLayout({
   }
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[#0a0f1e] text-slate-200">{children}</body>
+      <body className="min-h-screen bg-[#0a0f1e] text-slate-200">
+        {children}
+        <ToasterProvider />
+      </body>
     </html>
   );
 }

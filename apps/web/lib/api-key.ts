@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import crypto from "node:crypto";
 import { prisma } from "@afl/db";
 import { hashValue } from "@/lib/auth";
 
@@ -11,8 +12,7 @@ export type ApiKeyPrincipal = {
 };
 
 export function createApiKeySecret() {
-  const raw = `afl_${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`;
-  return raw;
+  return `afl_${crypto.randomBytes(16).toString("hex")}`;
 }
 
 export function keyPrefix(raw: string) {

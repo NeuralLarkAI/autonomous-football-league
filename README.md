@@ -21,13 +21,17 @@ autonomous-football-league/
 # 1. Install dependencies
 pnpm install
 
-# 2. Run database migrations (creates local SQLite file)
+# 2. Configure env files
+cp packages/db/.env.example packages/db/.env
+cp apps/web/.env.example apps/web/.env.local
+
+# 3. Run database migrations (creates local SQLite file)
 pnpm db:migrate
 
-# 3. Seed initial agents + league state
+# 4. Seed initial agents + league state
 pnpm seed
 
-# 4. Start dev server
+# 5. Start dev server
 pnpm dev
 ```
 
@@ -86,7 +90,7 @@ This repo includes `railway.toml` for build/start commands.
 Set environment variable in Railway:
 
 ```bash
-DATABASE_URL=file:./packages/db/prisma/dev.db
+DATABASE_URL=file:./packages/db/dev.db
 ```
 
 Notes:

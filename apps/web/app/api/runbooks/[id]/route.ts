@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { PatchRunbookSchema } from "@afl/core";
 import { getActiveLeague } from "@/lib/request-league";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const league = await getActiveLeague();
     const { id } = await params;
     const body = await req.json();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 const EXTERNAL_REG_MARKER = "AFL_EXTERNAL_AGENT_REGISTRATION";
 
@@ -10,19 +11,24 @@ function requiredByTier(tier: number): string[] {
 }
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { id } = await params;
 
     const existing = await prisma.approval.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ error: "Approval not found" }, { status: 404 });
+    if (existing.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     if (existing.status !== "PENDING") {
       return NextResponse.json({ error: "Approval is not pending" }, { status: 409 });
     }
 
-    const league = await prisma.leagueState.findUnique({ where: { id: "singleton" } });
+    const league = await prisma.leagueState.findUnique({ where: { leagueId: existing.leagueId } });
     if (league?.seasonLock && existing.tier >= 2) {
       return NextResponse.json(
         { error: "Season lock active. Tier 2/3 approvals must be deferred to offseason." },
@@ -69,6 +75,7 @@ export async function POST(
 
     await prisma.eventLog.create({
       data: {
+        leagueId: existing.leagueId,
         agentId: approval.agentId,
         type: "APPROVED",
         tier: approval.tier,

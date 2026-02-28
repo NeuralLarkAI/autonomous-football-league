@@ -146,6 +146,7 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
   const [data, setData] = useState<GamePayload | null>(null);
   const [tab, setTab] = useState<"gamecast" | "plays" | "drives" | "box">("gamecast");
   const [connected, setConnected] = useState(false);
+  const [selectedPlayId, setSelectedPlayId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/p/${slug}/games/${gameId}`, { cache: "no-store" });
@@ -166,9 +167,28 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
   }, [gameId, load, slug]);
 
   const derived = useMemo(() => stateFrom(data), [data]);
-  const state = derived.state;
   const latestPlay = derived.latestPlay;
-  const result = derived.result as any;
+
+  const playsDesc = data?.plays ?? [];
+  const selectedPlay = selectedPlayId ? playsDesc.find((p) => p.id === selectedPlayId) ?? null : null;
+
+  // For "live" field view we use the engine's post-play state (from resultJson).
+  // For replay selection we show the pre-play situation (from the play row itself).
+  const state = useMemo(() => {
+    if (!data) return null;
+    if (!selectedPlay) return derived.state;
+    const r = safeParseResult(selectedPlay) as any;
+    return {
+      qtr: clamp(selectedPlay.qtr, 1, 4),
+      timeSeconds: clamp(selectedPlay.timeSeconds, 0, 15 * 60),
+      down: clamp(selectedPlay.down, 1, 4),
+      distance: clamp(selectedPlay.distance, 1, 99),
+      yardLine: clamp(selectedPlay.yardLine, 0, 100),
+      offenseTeamId: selectedPlay.offenseTeam.id,
+      defenseTeamId: selectedPlay.defenseTeam.id,
+      driveNumber: clamp(Number(r?.driveNumber ?? derived.state?.driveNumber ?? 1), 1, 999),
+    } satisfies GameState;
+  }, [data, derived.state, selectedPlay]);
 
   const offenseTeam = useMemo(() => {
     if (!data || !state) return null;
@@ -274,8 +294,49 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
         yardLine={state.yardLine}
         qtr={state.qtr}
         timeSeconds={state.timeSeconds}
-        lastPlay={latestPlay?.description ?? null}
+        lastPlay={(selectedPlay ?? latestPlay)?.description ?? null}
       />
+
+      {selectedPlay && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-200">
+          <p>
+            <span className="text-xs uppercase tracking-[0.22em] text-slate-400">Replay</span>
+            <span className="ml-2 font-semibold text-slate-100">Play {selectedPlay.playNumber}</span>
+            <span className="text-slate-500"> | </span>
+            <span className="text-slate-300">
+              Q{selectedPlay.qtr} {clock(selectedPlay.timeSeconds)} {selectedPlay.down}&{selectedPlay.distance}
+            </span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => {
+                const idx = playsDesc.findIndex((p) => p.id === selectedPlay.id);
+                const newer = idx > 0 ? playsDesc[idx - 1] : null;
+                if (newer) setSelectedPlayId(newer.id);
+              }}
+              className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-white/10"
+            >
+              Newer
+            </button>
+            <button
+              onClick={() => {
+                const idx = playsDesc.findIndex((p) => p.id === selectedPlay.id);
+                const older = idx >= 0 && idx < playsDesc.length - 1 ? playsDesc[idx + 1] : null;
+                if (older) setSelectedPlayId(older.id);
+              }}
+              className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-white/10"
+            >
+              Older
+            </button>
+            <button
+              onClick={() => setSelectedPlayId(null)}
+              className="rounded-full border border-cyan-300/35 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/20"
+            >
+              Return to Live
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {(["gamecast", "plays", "drives", "box"] as const).map((key) => (
@@ -351,7 +412,15 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
             if (r?.firstDown) badges.push({ label: "1D", cls: "bg-cyan-700/30 text-cyan-200 ring-cyan-500/30" });
 
             return (
-              <div key={p.id} className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
+              <button
+                key={p.id}
+                onClick={() => setSelectedPlayId(p.id)}
+                className={`w-full rounded-2xl border bg-slate-950/55 p-4 text-left transition ${
+                  selectedPlayId === p.id
+                    ? "border-cyan-300/35 shadow-[0_0_0_1px_rgba(34,211,238,0.12)]"
+                    : "border-white/10 hover:border-white/20"
+                }`}
+              >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
                     Play {p.playNumber} | Q{p.qtr} {clock(p.timeSeconds)}
@@ -368,7 +437,7 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
                 <p className="mt-1 text-xs text-slate-400">
                   {p.offenseTeam.shortName} {p.down}&{p.distance} | YardLine {p.yardLine}
                 </p>
-              </div>
+              </button>
             );
           })}
           {data.plays.length === 0 && <p className="rounded-xl bg-slate-950/55 p-4 text-sm text-slate-400">No plays yet.</p>}
@@ -417,4 +486,3 @@ export function AispnGamecast({ slug, gameId }: { slug: string; gameId: string }
     </div>
   );
 }
-

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@afl/db";
 import { ModerateSocialSchema } from "@afl/core";
+import { enforceSameOrigin, requireActiveLeagueMember } from "@/lib/internal-auth";
 
 const MODERATOR_IDS = new Set(["commissioner", "community-moderation"]);
 
@@ -18,6 +19,10 @@ function parseTags(value: string): string[] {
 
 export async function POST(req: NextRequest) {
   try {
+    const origin = enforceSameOrigin(req);
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status });
+    const auth = await requireActiveLeagueMember({ admin: true });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const body = await req.json();
     const parsed = ModerateSocialSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -33,6 +38,7 @@ export async function POST(req: NextRequest) {
     if (targetType === "POST") {
       const post = await prisma.post.findUnique({ where: { id: targetId } });
       if (!post) return NextResponse.json({ error: "Post not found" }, { status: 404 });
+      if (post.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       postId = post.id;
 
       if (action === "HIDE") {
@@ -50,12 +56,14 @@ export async function POST(req: NextRequest) {
     } else {
       const comment = await prisma.comment.findUnique({ where: { id: targetId } });
       if (!comment) return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+      if (comment.leagueId !== auth.league.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       commentId = comment.id;
       postId = comment.postId;
     }
 
     const moderation = await prisma.moderationAction.create({
       data: {
+        leagueId: auth.league.id,
         targetType,
         targetId,
         action,
@@ -68,6 +76,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.eventLog.create({
       data: {
+        leagueId: auth.league.id,
         agentId: actorAgentId ?? undefined,
         type: "SOCIAL_MODERATION_ACTION",
         summary: `${action} ${targetType.toLowerCase()} ${targetId.slice(-6)}`,
