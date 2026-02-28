@@ -3,6 +3,6 @@ builder = "NIXPACKS"
 buildCommand = "corepack enable && corepack pnpm install --frozen-lockfile && corepack pnpm build"
 
 [deploy]
-startCommand = "case \"$DATABASE_URL\" in file:*) ;; *) export DATABASE_URL=\"file:./packages/db/dev.db\" ;; esac; corepack pnpm --filter @afl/db prisma:generate && corepack pnpm --filter @afl/db prisma:migrate:deploy && if [ \"$SERVICE_ROLE\" = \"worker\" ]; then corepack pnpm start:worker; else corepack pnpm start:web; fi"
+startCommand = "if [ \"${DATABASE_URL#file:}\" = \"$DATABASE_URL\" ]; then export DATABASE_URL=\"file:/app/packages/db/dev.db\"; fi; corepack pnpm --filter @afl/db prisma:generate && corepack pnpm --filter @afl/db prisma:migrate:deploy && if [ \"$SERVICE_ROLE\" = \"worker\" ]; then corepack pnpm start:worker; else corepack pnpm start:web; fi"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
