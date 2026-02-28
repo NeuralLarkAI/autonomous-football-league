@@ -108,9 +108,13 @@ export async function POST(
           leagueId: league.id,
           agentId: "commissioner",
           type: "AGENT_REGISTERED",
+          tier: 1,
           summary: `Public registration submitted: ${agentName}`,
-          entityType: "AGENT",
-          entityId: registration.id,
+          // Link the feed entry directly to the approval so clicks work.
+          entityType: "APPROVAL",
+          entityId: approval.id,
+          taskId: task.id,
+          approvalId: approval.id,
           visibility: "LEAGUE_ONLY",
           meta: JSON.stringify({
             marker: EXTERNAL_REG_MARKER,
