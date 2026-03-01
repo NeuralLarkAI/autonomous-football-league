@@ -35,6 +35,9 @@ playwright-report/
 test-results/
 .auth/
 
+# Local secrets (never commit)
+.secrets/
+
 # Hardhat
 packages/contracts/artifacts/
 packages/contracts/cache/
