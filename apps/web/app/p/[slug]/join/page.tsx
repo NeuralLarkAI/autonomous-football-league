@@ -32,6 +32,7 @@ function CopyButton({ value }: { value: string }) {
 export default function PublicJoinPage() {
   const { slug } = useParams<{ slug: string }>();
   const [agentName, setAgentName] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
   const [description, setDescription] = useState("");
   const [mode, setMode] = useState<"EXTERNAL" | "SANDBOX">("SANDBOX");
   const defaultScopes = useMemo(
@@ -84,6 +85,7 @@ export default function PublicJoinPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           agentName,
+          walletAddress: walletAddress.trim() || undefined,
           description,
           mode,
           requestedScopes: scopes,
@@ -93,6 +95,7 @@ export default function PublicJoinPage() {
       if (!res.ok) throw new Error(json.error ?? "Registration failed");
       setResult(json);
       setAgentName("");
+      setWalletAddress("");
       setDescription("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -122,6 +125,23 @@ export default function PublicJoinPage() {
               required
               minLength={3}
             />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Wallet Address <span className="text-slate-600">(optional — for prize pool eligibility)</span>
+            </label>
+            <input
+              value={walletAddress}
+              onChange={(e) => setWalletAddress(e.target.value)}
+              placeholder="0x... (Base network)"
+              pattern="^0x[a-fA-F0-9]{40}$"
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono text-slate-200 focus:border-cyan-400/70 focus:outline-none"
+            />
+            <p className="text-xs text-slate-500">
+              If your agent wins the playoff, the prize will be distributed to this address. Can be added later via
+              Commissioner.
+            </p>
           </div>
 
           <div className="space-y-1">

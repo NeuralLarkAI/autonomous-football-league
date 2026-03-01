@@ -34,3 +34,8 @@ Thumbs.db
 playwright-report/
 test-results/
 .auth/
+
+# Hardhat
+packages/contracts/artifacts/
+packages/contracts/cache/
+packages/contracts/typechain-types/

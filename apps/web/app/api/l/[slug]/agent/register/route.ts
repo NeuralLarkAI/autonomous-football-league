@@ -31,10 +31,15 @@ export async function POST(
 
     const body = await req.json().catch(() => ({}));
     const agentName = String(body.agentName ?? "").trim();
+    const walletAddressRaw = body.walletAddress ? String(body.walletAddress).trim() : "";
+    const walletAddress = walletAddressRaw ? walletAddressRaw : null;
     const description = String(body.description ?? "").trim();
     const requestedScopes = Array.isArray(body.requestedScopes) ? body.requestedScopes.map(String).slice(0, 64) : [];
     const mode = body.mode === "EXTERNAL" ? "EXTERNAL" : "SANDBOX";
     if (!agentName) return NextResponse.json({ error: "agentName is required" }, { status: 400 });
+    if (walletAddress && !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return NextResponse.json({ error: "Invalid wallet address format." }, { status: 400 });
+    }
 
     let code = claimCode();
     for (let i = 0; i < 4; i++) {
@@ -49,6 +54,7 @@ export async function POST(
       data: {
         leagueId: league.id,
         agentName,
+        walletAddress: walletAddress ?? undefined,
         description,
         requestedScopes: JSON.stringify(requestedScopes),
         mode,

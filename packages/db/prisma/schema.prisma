@@ -584,6 +584,7 @@ model AgentRegistration {
   description       String   @default("")
   requestedScopes   String   @default("[]") // JSON array
   mode              String   @default("SANDBOX") // SANDBOX|EXTERNAL
+  walletAddress     String?  // EVM wallet address for prize distribution (optional)
   status            String   @default("PENDING") // PENDING|CLAIMED|EXPIRED
   registrationToken String   @unique
   claimCode         String   @unique

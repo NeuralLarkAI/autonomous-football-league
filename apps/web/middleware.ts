@@ -25,6 +25,7 @@ function isPublicPath(pathname: string): boolean {
     pathname.startsWith("/login") ||
     pathname.startsWith("/claim/") ||
     pathname.startsWith("/watch") ||
+    pathname.startsWith("/vault") ||
     pathname.startsWith("/p/")
   );
 }

@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Table2,
   Trophy,
+  Vault,
 } from "lucide-react";
 
 const NAV = [
@@ -33,6 +34,7 @@ const NAV = [
   { path: "/combine", label: "Combine", icon: FlaskConical },
   { path: "/combine.md", label: "Combine Guide", icon: BookOpen },
   { path: "/ranked", label: "Ranked", icon: Trophy },
+  { path: "/vault", label: "AFL Vault", icon: Vault },
   { path: "/season", label: "Season", icon: CalendarRange },
   { path: "/runbooks", label: "Runbooks", icon: BookOpen },
   { path: "/connect", label: "Connect", icon: Cable },

@@ -39,6 +39,8 @@ export async function POST(
 
     const body = await req.json().catch(() => ({}));
     const agentName = String(body.agentName ?? "").trim();
+    const walletAddressRaw = body.walletAddress ? String(body.walletAddress).trim() : "";
+    const walletAddress = walletAddressRaw ? walletAddressRaw : null;
     const description = String(body.description ?? "").trim();
     const mode = body.mode === "SANDBOX" ? "SANDBOX" : "EXTERNAL";
     const requestedScopesInput: unknown[] = Array.isArray(body.requestedScopes) ? body.requestedScopes : [];
@@ -49,6 +51,9 @@ export async function POST(
 
     if (!agentName || agentName.length < 3) {
       return NextResponse.json({ error: "Agent name must be at least 3 characters." }, { status: 400 });
+    }
+    if (walletAddress && !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return NextResponse.json({ error: "Invalid wallet address format." }, { status: 400 });
     }
 
     let code = claimCode();
@@ -64,6 +69,7 @@ export async function POST(
         data: {
           leagueId: league.id,
           agentName,
+          walletAddress: walletAddress ?? undefined,
           description,
           requestedScopes: JSON.stringify(requestedScopes),
           mode,
@@ -83,6 +89,7 @@ export async function POST(
             `${EXTERNAL_REG_MARKER} registrationId=${registration.id} claimCode=${registration.claimCode}`,
             "",
             `Mode: ${mode}`,
+            `Wallet: ${walletAddress ?? "(none)"}`,
             `Requested scopes: ${requestedScopes.join(", ")}`,
             "",
             `Agent description:`,
@@ -127,6 +134,7 @@ export async function POST(
             registrationId: registration.id,
             claimCode: registration.claimCode,
             mode,
+            walletAddress,
             requestedScopes,
             approvalId: approval.id,
             taskId: task.id,

@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { useReadContract } from "wagmi";
+import { formatUnits, isAddress } from "viem";
+import { AFL_VAULT_ADDRESS } from "@/lib/contracts";
+import { AFL_VAULT_ABI } from "@/lib/afl-vault-abi";
 
 type FeedEvent = {
   id: string;
@@ -36,6 +40,12 @@ type DashboardSummary = {
   seasonLock: boolean;
   season: number;
   phase: string;
+};
+
+type PrizeInfo = {
+  seasonNumber: number;
+  winnerTeam: { id: string; name: string; shortName: string; coachAgentId: string | null } | null;
+  walletAddress: string | null;
 };
 
 const ALERT_TYPES = new Set(["REJECTED", "SEASON_LOCK", "DEFERRED", "INCIDENT_CREATED", "INCIDENT_RESOLVED"]);
@@ -78,6 +88,13 @@ function isSyntheticIncident(incident: Incident) {
   return SYNTHETIC_INCIDENT_TITLES.has(incident.title);
 }
 
+function fmtAfl(amount: bigint | null | undefined) {
+  if (amount == null) return "—";
+  const s = formatUnits(amount, 18);
+  const [whole, frac = ""] = s.split(".");
+  return `${whole}.${frac.slice(0, 2).padEnd(2, "0")}`;
+}
+
 export default function OpsPage() {
   const pathname = usePathname();
   const leagueSlug = pathname.split("/")[2] || "afl-prime";
@@ -85,24 +102,38 @@ export default function OpsPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
+  const [prizeInfo, setPrizeInfo] = useState<PrizeInfo | null>(null);
+  const [walletCopied, setWalletCopied] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
-    const [eventsRes, incidentsRes, healthRes, dashboardRes] = await Promise.all([
+  const vaultConfigured = isAddress(AFL_VAULT_ADDRESS);
+  const { data: vaultStats } = useReadContract({
+    address: AFL_VAULT_ADDRESS,
+    abi: AFL_VAULT_ABI,
+    functionName: "vaultStats",
+    query: { enabled: vaultConfigured },
+  });
+  const onchainPrizePool = (vaultStats as readonly [bigint, bigint, bigint] | undefined)?.[1];
+
+  const load = useCallback(async () => {
+    const [eventsRes, incidentsRes, healthRes, dashboardRes, prizeRes] = await Promise.all([
       fetch("/api/feed?take=100"),
       fetch("/api/incidents"),
       fetch("/api/ops/health"),
       fetch("/api/dashboard"),
+      fetch(`/api/l/${leagueSlug}/vault/prize-info`),
     ]);
-    const [eventsData, incidentsData, healthData] = await Promise.all([
+    const [eventsData, incidentsData, healthData, prizeData] = await Promise.all([
       eventsRes.json(),
       incidentsRes.json(),
       healthRes.json(),
+      prizeRes.ok ? prizeRes.json().catch(() => null) : Promise.resolve(null),
     ]);
 
     setEvents(Array.isArray(eventsData) ? eventsData : []);
     setIncidents(Array.isArray(incidentsData) ? incidentsData : []);
     setHealth(healthRes.ok ? healthData : null);
+    setPrizeInfo(prizeRes.ok && prizeData && !prizeData.error ? (prizeData as PrizeInfo) : null);
     if (dashboardRes.ok) {
       const dash = await dashboardRes.json().catch(() => null);
       setDashboard(dash && !dash.error ? (dash as DashboardSummary) : null);
@@ -110,13 +141,13 @@ export default function OpsPage() {
       setDashboard(null);
     }
     setLoading(false);
-  };
+  }, [leagueSlug]);
 
   useEffect(() => {
     load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
-  }, []);
+  }, [load]);
 
   const resolveIncident = async (id: string) => {
     await fetch(`/api/incidents/${id}/resolve`, {
@@ -208,6 +239,71 @@ export default function OpsPage() {
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
           <p className="text-xs text-slate-400">Open Incidents</p>
           <p className="text-2xl font-bold text-slate-100">{health?.openIncidents ?? 0}</p>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Prize Distribution</h2>
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500">Playoff winner (Season {prizeInfo?.seasonNumber ?? 1})</p>
+              <p className="text-sm font-semibold text-slate-100">
+                {prizeInfo?.winnerTeam ? prizeInfo.winnerTeam.name : "No standings winner found."}
+              </p>
+              <p className="text-xs text-slate-500">
+                Coach Agent: {prizeInfo?.winnerTeam?.coachAgentId ?? "—"}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500">Winner wallet address (from registration)</p>
+              {prizeInfo?.walletAddress ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-950/40 px-3 py-2">
+                  <code className="flex-1 break-all font-mono text-xs text-slate-100">{prizeInfo.walletAddress}</code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(prizeInfo.walletAddress ?? "");
+                      setWalletCopied(true);
+                      setTimeout(() => setWalletCopied(false), 2000);
+                    }}
+                    className="rounded-lg bg-slate-700 px-3 py-1 text-xs font-semibold text-slate-100 hover:bg-slate-600"
+                  >
+                    {walletCopied ? "Copied ✓" : "Copy"}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-amber-200">
+                  No wallet address on file. Ask the agent owner to add one during registration.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-slate-700/40 bg-slate-950/35 p-3">
+              <p className="text-xs text-slate-500">On-chain prize pool</p>
+              <p className="text-lg font-bold text-slate-100">
+                {vaultConfigured ? `${fmtAfl(onchainPrizePool)} $AFL` : "Vault not configured"}
+              </p>
+              {!vaultConfigured && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Set <code className="font-mono">NEXT_PUBLIC_AFL_VAULT_ADDRESS</code> to enable this read.
+                </p>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-700/40 bg-slate-950/35 p-3">
+              <p className="text-xs text-slate-500">Manual payout instruction</p>
+              <p className="text-xs text-slate-300">
+                Call <code className="font-mono">distributePrize(winner)</code> on the Vault contract with the winner
+                address. (Do not automate server-side.)
+              </p>
+              <Link href="/vault" className="mt-2 inline-block text-xs text-cyan-300 hover:underline">
+                Open AFL Vault →
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 
